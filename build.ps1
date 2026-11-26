@@ -1,4 +1,5 @@
-# Builds LGforWin with Visual Studio's MSBuild.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Builds TVControlForWin with Visual Studio's MSBuild.
 #
 # WinUI 3 PRI/MSIX generation needs the AppxPackage MSBuild task
 # (Microsoft.Build.Packaging.Pri.Tasks.dll) which ships with Visual Studio, not the
@@ -8,8 +9,8 @@
 # Usage:  pwsh -File build.ps1 [-Configuration Debug|Release] [-Run] [-Package]
 #
 # -Package additionally produces, in dist\:
-#   LGforWin-<version>-win-x64.zip   portable build
-#   LGforWin-<version>-setup.exe     Inno Setup installer (needs Inno Setup 6)
+#   TVControlForWin-<version>-win-x64.zip   portable build
+#   TVControlForWin-<version>-setup.exe     Inno Setup installer (needs Inno Setup 6)
 
 param(
     [string]$Configuration = "Debug",
@@ -26,12 +27,12 @@ if (-not $vs) { throw "Visual Studio with MSBuild not found." }
 $msbuild = Join-Path $vs "MSBuild\Current\Bin\amd64\MSBuild.exe"
 if (-not (Test-Path $msbuild)) { $msbuild = Join-Path $vs "MSBuild\Current\Bin\MSBuild.exe" }
 
-$proj = Join-Path $PSScriptRoot "LGforWin.csproj"
+$proj = Join-Path $PSScriptRoot "TVControlForWin.csproj"
 Write-Host "Building $Configuration with $msbuild" -ForegroundColor Cyan
 & $msbuild $proj -restore -p:Configuration=$Configuration -p:Platform=x64 -m
 
 $outDir = Join-Path $PSScriptRoot "bin\x64\$Configuration\net8.0-windows10.0.19041.0\win-x64"
-$exe = Join-Path $outDir "LGforWin.exe"
+$exe = Join-Path $outDir "TVControlForWin.exe"
 
 if ($Package) {
     if (-not (Test-Path $exe)) { throw "Build output not found at $exe" }
@@ -41,7 +42,7 @@ if ($Package) {
     $dist = Join-Path $PSScriptRoot "dist"
     New-Item -ItemType Directory -Force $dist | Out-Null
 
-    $zip = Join-Path $dist "LGforWin-$version-win-x64.zip"
+    $zip = Join-Path $dist "TVControlForWin-$version-win-x64.zip"
     Write-Host "Packing $zip" -ForegroundColor Cyan
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path (Join-Path $outDir '*') -DestinationPath $zip -CompressionLevel Optimal

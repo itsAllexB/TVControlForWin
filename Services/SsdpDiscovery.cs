@@ -1,32 +1,36 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Xml.Linq;
+using TVControlForWin.Models;
 
-namespace LGforWin.Services;
+namespace TVControlForWin.Services;
 
 /// <summary>A TV found on the LAN via SSDP, ready to be added by one click.</summary>
-public sealed record DiscoveredTv(string Name, string Host, string Model);
+public sealed record DiscoveredTv(string Name, string Host, string Model, TvKind Kind);
 
 /// <summary>
-/// Finds LG webOS TVs on the local network via SSDP (UPnP discovery). Sends an
-/// M-SEARCH for the LG-specific "webos-second-screen" service — only webOS TVs
-/// answer it — then fetches each responder's device-description XML for its
-/// friendly name and model.
+/// Finds controllable TVs on the local network via SSDP (UPnP discovery). Two searches go out:
+/// LG's "webos-second-screen" service, which only webOS TVs answer, and DIAL, which every
+/// Android TV / Google TV answers (as do other cast-capable devices, so each DIAL responder
+/// is kept only if its Android TV Remote port is open). Each responder's device-description
+/// XML supplies the friendly name and model.
 /// </summary>
 public static class SsdpDiscovery
 {
     private const string MulticastAddress = "239.255.255.250";
     private const int MulticastPort = 1900;
-    private const string SearchTarget = "urn:lge-com:service:webos-second-screen:1";
+    private const string WebOsTarget = "urn:lge-com:service:webos-second-screen:1";
+    private const string DialTarget = "urn:dial-multiscreen-org:service:dial:1";
 
-    private static readonly string MSearch =
+    private static string MSearch(string target) =>
         "M-SEARCH * HTTP/1.1\r\n" +
         $"HOST: {MulticastAddress}:{MulticastPort}\r\n" +
         "MAN: \"ssdp:discover\"\r\n" +
         "MX: 2\r\n" +
-        $"ST: {SearchTarget}\r\n" +
+        $"ST: {target}\r\n" +
         "\r\n";
 
     /// <summary>
@@ -51,27 +55,61 @@ public static class SsdpDiscovery
         scan.CancelAfter(timeout ?? TimeSpan.FromSeconds(4));
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
 
+        // Looking a responder up takes network round-trips, so it runs alongside the listening
+        // rather than holding up other replies — and is allowed to finish after the window closes.
+        var lookups = new List<Task>();
+        void Describe(string location, bool isWebOs)
+        {
+            var lookup = Task.Run(async () =>
+            {
+                try
+                {
+                    var tv = isWebOs
+                        ? await DescribeWebOsAsync(http, location, ct).ConfigureAwait(false)
+                        : await DescribeAndroidTvAsync(http, location, ct).ConfigureAwait(false);
+                    if (tv is null) return;
+                    lock (gate)
+                    {
+                        if (!seenHosts.Add(tv.Host)) return;
+                        results.Add(tv);
+                    }
+                    found?.Report(tv);
+                }
+                catch { /* cancelled mid-lookup */ }
+            }, CancellationToken.None);
+            lock (gate) lookups.Add(lookup);
+        }
+
         try
         {
             var listeners = sockets
-                .Select(s => ListenAsync(s, http, gate, seenLocations, seenHosts, results, found, scan.Token))
+                .Select(s => ListenAsync(s, gate, seenLocations, Describe, scan.Token))
                 .ToList();
 
-            // Fire the search a few times per socket — SSDP is UDP, replies can be lost.
-            var searchBytes = Encoding.ASCII.GetBytes(MSearch);
+            // Fire the searches a few times per socket — SSDP is UDP, replies can be lost.
+            var searches = new[] { WebOsTarget, DialTarget }
+                .Select(st => Encoding.ASCII.GetBytes(MSearch(st)))
+                .ToList();
             var target = new IPEndPoint(IPAddress.Parse(MulticastAddress), MulticastPort);
             for (var burst = 0; burst < 3; burst++)
             {
                 foreach (var socket in sockets)
                 {
-                    try { await socket.SendAsync(searchBytes, target, scan.Token).ConfigureAwait(false); }
-                    catch { /* interface may have gone away mid-scan */ }
+                    foreach (var search in searches)
+                    {
+                        try { await socket.SendAsync(search, target, scan.Token).ConfigureAwait(false); }
+                        catch { /* interface may have gone away mid-scan */ }
+                    }
                 }
                 try { await Task.Delay(150, scan.Token).ConfigureAwait(false); }
                 catch (OperationCanceledException) { break; }
             }
 
             await Task.WhenAll(listeners).ConfigureAwait(false);
+
+            Task[] pending;
+            lock (gate) pending = lookups.ToArray();
+            await Task.WhenAll(pending).ConfigureAwait(false);
         }
         finally
         {
@@ -82,11 +120,11 @@ public static class SsdpDiscovery
         return results;
     }
 
-    // Receives responses on one socket until the scan window closes. Never throws.
+    // Receives responses on one socket until the scan window closes, handing each new
+    // responder to <paramref name="describe"/> (location, isWebOs). Never throws.
     private static async Task ListenAsync(
-        UdpClient socket, HttpClient http, object gate,
-        HashSet<string> seenLocations, HashSet<string> seenHosts,
-        List<DiscoveredTv> results, IProgress<DiscoveredTv>? found, CancellationToken ct)
+        UdpClient socket, object gate, HashSet<string> seenLocations,
+        Action<string, bool> describe, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -95,21 +133,21 @@ public static class SsdpDiscovery
             catch (OperationCanceledException) { return; }
             catch { return; /* socket error — stop listening on this one */ }
 
-            var location = ParseLocation(Encoding.UTF8.GetString(received.Buffer));
-            if (location is null) continue;
+            var response = Encoding.UTF8.GetString(received.Buffer);
+            var location = ParseHeader(response, "LOCATION");
+            if (location is null || !Uri.IsWellFormedUriString(location, UriKind.Absolute)) continue;
+
+            // LG TVs answer DIAL too; they're picked up by the webOS search instead.
+            var isWebOs = string.Equals(ParseHeader(response, "ST"), WebOsTarget, StringComparison.OrdinalIgnoreCase);
+            if (!isWebOs && (ParseHeader(response, "SERVER") ?? "").Contains("webOS", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             lock (gate)
             {
                 if (!seenLocations.Add(location)) continue;
             }
 
-            var tv = await DescribeAsync(http, location, ct).ConfigureAwait(false);
-            if (tv is null) continue;
-            lock (gate)
-            {
-                if (!seenHosts.Add(tv.Host)) continue;
-                results.Add(tv);
-            }
-            found?.Report(tv);
+            describe(location, isWebOs);
         }
     }
 
@@ -147,34 +185,42 @@ public static class SsdpDiscovery
         return sockets;
     }
 
-    private static string? ParseLocation(string response)
+    private static string? ParseHeader(string response, string name)
     {
         foreach (var line in response.Split("\r\n"))
         {
-            if (line.StartsWith("LOCATION:", StringComparison.OrdinalIgnoreCase))
-            {
-                var value = line["LOCATION:".Length..].Trim();
-                return Uri.IsWellFormedUriString(value, UriKind.Absolute) ? value : null;
-            }
+            if (line.Length > name.Length && line[name.Length] == ':' &&
+                line.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+                return line[(name.Length + 1)..].Trim();
         }
         return null;
     }
 
-    // Fetches the UPnP device description and turns it into a DiscoveredTv.
-    private static async Task<DiscoveredTv?> DescribeAsync(HttpClient http, string location, CancellationToken ct)
+    // Fetches the UPnP device description: friendly name, manufacturer and model. Empty
+    // strings when the description is unreachable.
+    private static async Task<(string Name, string Manufacturer, string Model)> ReadDescriptionAsync(
+        HttpClient http, string location, CancellationToken ct)
     {
-        var host = new Uri(location).Host;
-        string name = "", model = "";
         try
         {
             var xml = await http.GetStringAsync(location, ct).ConfigureAwait(false);
             var doc = XDocument.Parse(xml);
             XNamespace ns = "urn:schemas-upnp-org:device-1-0";
             var device = doc.Descendants(ns + "device").FirstOrDefault();
-            name = device?.Element(ns + "friendlyName")?.Value?.Trim() ?? "";
-            model = device?.Element(ns + "modelName")?.Value?.Trim() ?? "";
+            return (device?.Element(ns + "friendlyName")?.Value?.Trim() ?? "",
+                    device?.Element(ns + "manufacturer")?.Value?.Trim() ?? "",
+                    device?.Element(ns + "modelName")?.Value?.Trim() ?? "");
         }
-        catch { /* description unreachable — still offer the TV by IP */ }
+        catch
+        {
+            return ("", "", "");
+        }
+    }
+
+    private static async Task<DiscoveredTv?> DescribeWebOsAsync(HttpClient http, string location, CancellationToken ct)
+    {
+        var host = new Uri(location).Host;
+        var (name, _, model) = await ReadDescriptionAsync(http, location, ct).ConfigureAwait(false);
 
         // friendlyName is usually "[LG] webOS TV OLED55C34LA" — trim the boilerplate.
         name = name.Replace("[LG]", "", StringComparison.OrdinalIgnoreCase)
@@ -182,6 +228,24 @@ public static class SsdpDiscovery
                    .Trim();
         if (string.IsNullOrEmpty(name)) name = string.IsNullOrEmpty(model) ? "LG TV" : model;
 
-        return new DiscoveredTv(name, host, model);
+        return new DiscoveredTv(name, host, model, TvKind.WebOs);
+    }
+
+    // A DIAL responder is only a TV we can control if it also runs the Android TV Remote
+    // service; speakers, streaming sticks of other makes and the like don't.
+    private static async Task<DiscoveredTv?> DescribeAndroidTvAsync(HttpClient http, string location, CancellationToken ct)
+    {
+        var host = new Uri(location).Host;
+        if (!await TvControllerFactory.IsPortOpenAsync(host, AndroidTvTls.RemotePort, ct).ConfigureAwait(false))
+            return null;
+
+        var (name, manufacturer, model) = await ReadDescriptionAsync(http, location, ct).ConfigureAwait(false);
+
+        // e.g. manufacturer "TCL", model "Smart TV Pro" → "TCL Smart TV Pro".
+        if (!string.IsNullOrEmpty(manufacturer) && !model.StartsWith(manufacturer, StringComparison.OrdinalIgnoreCase))
+            model = $"{manufacturer} {model}".Trim();
+        if (string.IsNullOrEmpty(name)) name = string.IsNullOrEmpty(model) ? "Google TV" : model;
+
+        return new DiscoveredTv(name, host, model, TvKind.AndroidTv);
     }
 }

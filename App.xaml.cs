@@ -1,11 +1,12 @@
-using LGforWin.Services;
-using LGforWin.ViewModels;
-using LGforWin.Views;
+// SPDX-License-Identifier: AGPL-3.0-or-later
+using TVControlForWin.Services;
+using TVControlForWin.ViewModels;
+using TVControlForWin.Views;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 
-namespace LGforWin;
+namespace TVControlForWin;
 
 public partial class App : Application
 {
@@ -39,7 +40,7 @@ public partial class App : Application
             _dispatcher.TryEnqueue(() =>
             {
                 var step = _vm!.Settings.HotkeyStep;
-                var outcome = _vm.NudgeByCursor(action == HotkeyAction.BrightnessUp ? step : -step);
+                var outcome = _vm.NudgeFromHotkey(action == HotkeyAction.BrightnessUp ? step : -step);
                 switch (outcome.Kind)
                 {
                     case HotkeyTargetOutcome.Adjusted:
@@ -63,50 +64,75 @@ public partial class App : Application
         _window.ApplyTheme(_vm.Settings.ThemeIndex);
 
         // Manual launches always open the window; the launch-behavior preference applies only to the
-        // at-sign-in autostart launch (tagged with --autostart on the Run entry).
-        var isAutostart = Environment.GetCommandLineArgs().Contains(AutostartService.AutostartArg);
-        ApplyLaunchBehavior(_window, isAutostart ? _vm.Settings.LaunchBehavior : 0);
+        // at-sign-in autostart launch (tagged with --autostart on the Run entry). Coming back
+        // from a background update, the app returns to the tray it was in.
+        var launchArgs = Environment.GetCommandLineArgs();
+        var behavior = launchArgs.Contains(AppInfo.TrayArg) ? 2
+            : launchArgs.Contains(AutostartService.AutostartArg) ? _vm.Settings.LaunchBehavior
+            : 0;
+        ApplyLaunchBehavior(_window, behavior);
 
-        WirePowerAutomation();
+        WirePowerAutomation(afterUpdate: launchArgs.Contains(AppInfo.UpdatedArg));
+
+        _vm.Updates.IsWindowVisible = () => _window?.AppWindow.IsVisible == true;
+        _vm.Updates.InstallRequested += InstallUpdate;
+        _vm.Updates.Start();
     }
 
-    // Connects the Windows power lifecycle to the TV power rules (Power page). The main
-    // window's HWND outlives hide-to-tray, so it can carry the power notifications.
-    private void WirePowerAutomation()
+    // Hands over to the installer: start it (with the app's own restart queued behind it, see
+    // UpdateService.InstallCommand), then exit so none of the app's files are in use.
+    private void InstallUpdate(string installer, bool quiet)
+    {
+        try
+        {
+            var exe = Environment.ProcessPath ?? throw new InvalidOperationException("The app's own path is unknown.");
+            System.Diagnostics.ProcessStartInfo command;
+            try
+            {
+                command = UpdateService.InstallCommand(installer, exe, quiet);
+            }
+            catch (NotSupportedException)
+            {
+                // Can't queue the restart behind it: run the installer as a person would. Its
+                // last page offers to start the app.
+                command = new System.Diagnostics.ProcessStartInfo(installer) { UseShellExecute = true };
+            }
+            System.Diagnostics.Process.Start(command)?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"update: couldn't start the installer ({ex.Message})");
+            _vm?.Updates.InstallNotStarted();
+            return;
+        }
+        _window?.Quit();
+    }
+
+    // Connects the Windows power lifecycle to the TV power rules (Power page); MainViewModel
+    // decides what each TV does by its own or the shared rules. The main window's HWND outlives
+    // hide-to-tray, so it can carry the power notifications.
+    private void WirePowerAutomation(bool afterUpdate)
     {
         _powerEvents = new PowerEventService(MainWindowHandle);
 
+        // An installer run by hand asks the running app to close. Quit properly (off this
+        // window message), without treating it as the PC shutting down.
+        _powerEvents.CloseRequested += () => _dispatcher?.TryEnqueue(() => _window?.Quit());
+
         // Sleep and shutdown give handlers only a couple of seconds — send the off
         // commands over the already-open sockets and wait briefly, then let go.
-        _powerEvents.Suspending += () =>
-        {
-            if (_vm?.Settings.Power.OffOnSleep == true) _vm.TurnOffAllAsync().Wait(1500);
-        };
-        _powerEvents.SessionEnding += () =>
-        {
-            if (_vm?.Settings.Power.OffOnShutdown == true) _vm.TurnOffAllAsync().Wait(2000);
-        };
+        _powerEvents.Suspending += () => _vm?.OnPcSuspendingAsync().Wait(1500);
+        _powerEvents.SessionEnding += () => _vm?.OnSessionEndingAsync().Wait(2000);
 
-        _powerEvents.Resumed += () =>
-        {
-            if (_vm?.Settings.Power.OnResume == true) _ = _vm.PowerOnAllAsync();
-        };
-
-        _powerEvents.DisplayStateChanged += on =>
-        {
-            var power = _vm?.Settings.Power;
-            if (power is null) return;
-            if (!on && power.FollowDisplayOff)
-                _ = power.DisplayOffAction == 1 ? _vm!.TurnOffAllAsync() : _vm!.ScreenOffAllAsync();
-            else if (on && power.FollowDisplayOn)
-                _ = _vm!.PowerOnAllAsync();
-        };
+        _powerEvents.Resumed += () => _ = _vm?.OnPcResumedAsync();
+        _powerEvents.DisplayStateChanged += on => _ = _vm?.OnDisplaysChangedAsync(on);
 
         // "Turn on when the PC starts": the app just started, so wake the TVs now. WoL
         // reaches TVs that are off; ones already on simply ignore it (screen-on is a no-op
         // here because no connection exists yet — the reconnect loop is racing in parallel).
-        if (_vm!.Settings.Power.OnAppStart)
-            _ = _vm.PowerOnAllAsync();
+        // Not after an update: the app only blinked, and a TV someone switched off in the
+        // meantime should stay off.
+        if (!afterUpdate) _ = _vm!.OnAppStartedAsync();
     }
 
     // Opens the window per the launch preference (0 = normal window, 1 = minimized, 2 = tray).
@@ -148,28 +174,29 @@ public partial class App : Application
         _overlay.ShowUnpaired(_vm.Settings.Osd);
     }
 
-    // Shows the OSD after a schedule applied brightness, if the user opted in. Schedules affect all
-    // TVs, so it's one confirmation on the configured screen (always shown — falls back to primary
-    // if "TV's screen" can't resolve), named only when there's a single TV.
-    private void ShowScheduleOverlay(int value)
+    // Shows the OSD after a schedule applied brightness, if the user opted in. One confirmation
+    // for the TVs it changed: the value of the first of them in Home page order, on the
+    // configured screen (always shown — falls back to primary if "TV's screen" can't
+    // resolve), named only when a single TV changed.
+    private void ShowScheduleOverlay(IReadOnlyList<TvViewModel> changed)
     {
         if (_vm is null || !_vm.Settings.Osd.Enabled || !_vm.Settings.Osd.ShowOnSchedule) return;
-        var tv = _vm.ActiveTv ?? _vm.Tvs.FirstOrDefault();
+        var tv = changed[0];
         _overlay ??= new BrightnessOverlay();
         _overlay.ApplyTheme(_vm.Settings.ThemeIndex);
-        _overlay.ShowBrightness(_vm.Tvs.Count == 1 ? tv?.Name : null, value, _vm.Settings.Osd,
-            tv?.Device.PairedScreenId, allowFallback: true);
+        _overlay.ShowBrightness(changed.Count == 1 ? tv.Name : null, tv.Backlight, _vm.Settings.Osd,
+            tv.Device.PairedScreenId, allowFallback: true);
     }
 
     /// <summary>Shows the OSD on demand (from the settings page Preview button), ignoring the enable toggle.</summary>
     public void PreviewOverlay()
     {
         if (_vm is null) return;
-        var tv = _vm.ActiveTv ?? _vm.Tvs.FirstOrDefault();
+        var tv = _vm.Tvs.FirstOrDefault();
         _overlay ??= new BrightnessOverlay();
         _overlay.ApplyTheme(_vm.Settings.ThemeIndex);
         // Preview should always show something even if this TV isn't paired to a screen yet.
-        _overlay.ShowBrightness(tv?.Name ?? "LG TV", tv?.Backlight ?? 50, _vm.Settings.Osd,
+        _overlay.ShowBrightness(tv?.Name ?? "TV", tv?.Backlight ?? 50, _vm.Settings.Osd,
             tv?.Device.PairedScreenId, allowFallback: true);
     }
 

@@ -1,14 +1,20 @@
-using LGforWin.ViewModels;
+// SPDX-License-Identifier: AGPL-3.0-or-later
+using TVControlForWin.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
-namespace LGforWin.Views;
+namespace TVControlForWin.Views;
 
 public sealed partial class HotkeysPage : Page
 {
     public MainViewModel VM => ((App)Application.Current).ViewModel!;
 
-    public HotkeysPage() => InitializeComponent();
+    public HotkeysPage()
+    {
+        // Which TVs can be dimmed can change while the app runs; list them as they are now.
+        VM.RefreshTvLists();
+        InitializeComponent();
+    }
 
     // A rejected change (e.g. clearing the last modifier) is reverted by the VM re-raising the
     // property, which the OneWay IsChecked binding picks up.

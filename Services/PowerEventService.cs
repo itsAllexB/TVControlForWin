@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Runtime.InteropServices;
 
-namespace LGforWin.Services;
+namespace TVControlForWin.Services;
 
 /// <summary>
 /// Surfaces the Windows power lifecycle as events, by subclassing the (always-alive,
@@ -20,6 +21,10 @@ public sealed class PowerEventService : IDisposable
 
     /// <summary>The session is ending: shutdown, restart or sign-out. Handlers get a few seconds.</summary>
     public event Action? SessionEnding;
+
+    /// <summary>Windows asked just this app to close (an installer wants its files), with the
+    /// session carrying on. The handler should quit the app; nothing is shutting down.</summary>
+    public event Action? CloseRequested;
 
     private readonly IntPtr _hwnd;
     private readonly SUBCLASSPROC _proc; // kept alive to avoid GC of the delegate
@@ -57,8 +62,19 @@ public sealed class PowerEventService : IDisposable
                 break;
 
             case WM_ENDSESSION when wParam != IntPtr.Zero:
-                Log.Write("power: session ending");
-                SessionEnding?.Invoke();
+                // An installer replacing the app's files asks it to close with this same
+                // message, flagged ENDSESSION_CLOSEAPP. The PC isn't shutting down then, so the
+                // shutdown rules must not run (they'd switch the TVs off mid-install).
+                if (((long)lParam & ENDSESSION_CLOSEAPP) != 0)
+                {
+                    Log.Write("power: asked to close so the app's files can be replaced");
+                    CloseRequested?.Invoke();
+                }
+                else
+                {
+                    Log.Write("power: session ending");
+                    SessionEnding?.Invoke();
+                }
                 break;
         }
         return DefSubclassProc(hWnd, uMsg, wParam, lParam);
@@ -94,6 +110,7 @@ public sealed class PowerEventService : IDisposable
 
     private const uint WM_POWERBROADCAST = 0x0218;
     private const uint WM_ENDSESSION = 0x0016;
+    private const long ENDSESSION_CLOSEAPP = 0x1;
     private const int PBT_APMSUSPEND = 0x0004;
     private const int PBT_APMRESUMEAUTOMATIC = 0x0012;
     private const int PBT_POWERSETTINGCHANGE = 0x8013;

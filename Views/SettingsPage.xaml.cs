@@ -1,12 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
 using System.Collections.Generic;
-using LGforWin.ViewModels;
+using TVControlForWin.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 
-namespace LGforWin.Views;
+namespace TVControlForWin.Views;
 
 public sealed partial class SettingsPage : Page
 {
@@ -14,14 +15,17 @@ public sealed partial class SettingsPage : Page
 
     public SettingsPage() => InitializeComponent();
 
+    // The Updates section's button: checks, updates or installs, by what's known so far.
+    private async void OnUpdateClick(object sender, RoutedEventArgs e) => await VM.Updates.RunAsync();
+
     private async void OnExportClick(object sender, RoutedEventArgs e)
     {
         var picker = new FileSavePicker
         {
             SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-            SuggestedFileName = "LGforWin-backup"
+            SuggestedFileName = "TVControlForWin-backup"
         };
-        picker.FileTypeChoices.Add("LGforWin backup", new List<string> { ".json" });
+        picker.FileTypeChoices.Add("TVControlForWin backup", new List<string> { ".json" });
         InitializeWithWindow(picker);
 
         var file = await picker.PickSaveFileAsync();
@@ -50,11 +54,11 @@ public sealed partial class SettingsPage : Page
         {
             var json = await FileIO.ReadTextAsync(file);
             VM.ImportSettings(json);
-            await ShowDialogAsync("Import complete", "Your TVs, schedules and preferences have been restored.");
+            await ShowDialogAsync("Import complete", "Your TVs and settings are restored.");
         }
         catch (Exception ex)
         {
-            await ShowDialogAsync("Import failed", $"Couldn't import that file.\n\n{ex.Message}");
+            await ShowDialogAsync("Import failed", $"That file couldn't be imported.\n\n{ex.Message}");
         }
     }
 

@@ -1,68 +1,93 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <Page
-    x:Class="LGforWin.Views.SchedulePage"
+    x:Class="TVControlForWin.Views.SchedulePage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:vm="using:LGforWin.ViewModels">
+    xmlns:vm="using:TVControlForWin.ViewModels"
+    xmlns:controls="using:TVControlForWin.Controls">
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*" Padding="24,12,24,24" RowSpacing="16">
+    <Grid RowDefinitions="Auto,*">
+        <TextBlock Text="Schedule" Style="{StaticResource PageTitleStyle}" />
 
-        <!-- Header -->
-        <StackPanel Grid.Row="0" Spacing="2">
-            <TextBlock Text="Schedule" Style="{ThemeResource TitleTextBlockStyle}" />
-            <TextBlock Text="Automatically set brightness at times of day (applies to all TVs). Up to 10 schedules."
-                       Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        </StackPanel>
+        <ScrollViewer Grid.Row="1" HorizontalScrollMode="Disabled">
+            <StackPanel Style="{StaticResource PageContentStyle}">
 
-        <!-- Catch-up on startup -->
-        <Border Grid.Row="1" Padding="16" CornerRadius="8"
-                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-            <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                <StackPanel Grid.Column="0">
-                    <TextBlock Text="Apply the active schedule on startup" />
-                    <TextBlock Text="When the app opens, set each TV to whichever schedule is currently in effect — catching up rules that ran while the PC was off."
-                               Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                </StackPanel>
-                <ToggleSwitch Grid.Column="1" MinWidth="0"
-                              IsOn="{x:Bind VM.ApplyScheduleOnStartup, Mode=TwoWay}" />
-            </Grid>
-        </Border>
+                <!-- Catch-up on startup -->
+                <controls:SettingCard Header="Apply current schedule at startup" Glyph="&#xE81C;"
+                                      InfoText="When the app starts, each TV is set to the schedule in effect at that moment. That covers schedules that ran while the PC was off.">
+                    <ToggleSwitch MinWidth="0" IsOn="{x:Bind VM.ApplyScheduleOnStartup, Mode=TwoWay}" />
+                </controls:SettingCard>
 
-        <!-- Add -->
-        <Button Grid.Row="2" Content="Add schedule" HorizontalAlignment="Left"
-                Style="{ThemeResource AccentButtonStyle}"
-                Command="{x:Bind VM.AddScheduleCommand}" />
+                <!-- Header with the Add button -->
+                <Grid ColumnDefinitions="*,Auto" Margin="1,20,0,4">
+                    <TextBlock Text="Schedules" Style="{StaticResource SectionHeaderTextStyle}" />
+                    <Button Grid.Column="1" Command="{x:Bind VM.AddScheduleCommand}"
+                            AutomationProperties.Name="Add schedule">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE710;" FontSize="14" />
+                            <TextBlock Text="Add schedule" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
 
-        <!-- List -->
-        <ScrollViewer Grid.Row="3">
-            <StackPanel Spacing="12">
-                <ItemsControl ItemsSource="{x:Bind VM.Schedules}">
+                <!-- List -->
+                <ItemsControl ItemsSource="{x:Bind VM.Schedules}" IsTabStop="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Spacing="4" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:ScheduleViewModel">
-                            <Border Padding="16" CornerRadius="8" Margin="0,0,0,4"
-                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                            <Border Style="{StaticResource CardStyle}" Padding="16,12">
                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" VerticalAlignment="Center">
                                     <TimePicker Grid.Column="0" VerticalAlignment="Center"
+                                                AutomationProperties.Name="Time"
                                                 ClockIdentifier="{x:Bind ClockId}"
                                                 Time="{x:Bind Time, Mode=TwoWay}" />
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                                        <TextBlock Style="{ThemeResource CaptionTextBlockStyle}"
-                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                                            <Run Text="Set brightness to" />
+
+                                    <Grid Grid.Column="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" VerticalAlignment="Center">
+                                        <FontIcon Grid.Column="0" Glyph="&#xE706;" FontSize="16" VerticalAlignment="Center"
+                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <Slider Grid.Column="1" Minimum="0" Maximum="100" VerticalAlignment="Center"
+                                                AutomationProperties.Name="Brightness"
+                                                Value="{x:Bind Brightness, Mode=TwoWay}" />
+                                        <TextBlock Grid.Column="2" MinWidth="40" TextAlignment="Right" VerticalAlignment="Center">
                                             <Run Text="{x:Bind Brightness, Mode=OneWay}" /><Run Text="%" />
                                         </TextBlock>
-                                        <Slider Minimum="0" Maximum="100" Value="{x:Bind Brightness, Mode=TwoWay}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                                        <ToggleSwitch IsOn="{x:Bind Enabled, Mode=TwoWay}" MinWidth="0" />
-                                        <Button Click="OnRemoveClick" Tag="{x:Bind}"
+                                    </Grid>
+
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <!-- Which TVs it changes. Only with two or more TVs that can be dimmed;
+                                             the flyout is filled as it opens (see OnTvFlyoutOpening). -->
+                                        <!-- Fixed width, so the sliders line up whatever each label says. -->
+                                        <DropDownButton VerticalAlignment="Center" Width="140"
+                                                        HorizontalContentAlignment="Left"
+                                                        AutomationProperties.AutomationId="TvPicker"
+                                                        AutomationProperties.Name="{x:Bind TargetLabel, Mode=OneWay}"
+                                                        ToolTipService.ToolTip="TVs this schedule changes"
+                                                        Visibility="{x:Bind TvPickerVisibility, Mode=OneWay}"
+                                                        Tag="{x:Bind}">
+                                            <TextBlock Text="{x:Bind TargetLabel, Mode=OneWay}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <DropDownButton.Flyout>
+                                                <Flyout Placement="Bottom" Opening="OnTvFlyoutOpening">
+                                                    <StackPanel MinWidth="160">
+                                                        <CheckBox Content="All TVs" Click="OnAllTvsClick" />
+                                                        <Border Style="{StaticResource DividerStyle}" Margin="0,4" />
+                                                        <StackPanel />
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </DropDownButton.Flyout>
+                                        </DropDownButton>
+                                        <ToggleSwitch IsOn="{x:Bind Enabled, Mode=TwoWay}" MinWidth="0" Margin="8,0,0,0"
+                                                      AutomationProperties.Name="Schedule on" />
+                                        <Button Style="{StaticResource SubtleIconButtonStyle}"
+                                                Click="OnRemoveClick" Tag="{x:Bind}"
                                                 AutomationProperties.Name="Remove schedule"
-                                                ToolTipService.ToolTip="Remove">
-                                            <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                                ToolTipService.ToolTip="Remove schedule">
+                                            <FontIcon Glyph="&#xE74D;" FontSize="16" />
                                         </Button>
                                     </StackPanel>
                                 </Grid>
@@ -71,10 +96,9 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <TextBlock Text="No schedules yet. Add one above."
+                <TextBlock Text="No schedules yet"
                            Visibility="{x:Bind EmptyVisibility, Mode=OneTime}"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Style="{ThemeResource CaptionTextBlockStyle}" Margin="2,8,0,0" />
+                           Style="{StaticResource SecondaryCaptionStyle}" Margin="1,4,0,0" />
             </StackPanel>
         </ScrollViewer>
     </Grid>

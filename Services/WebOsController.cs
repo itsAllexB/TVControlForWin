@@ -1,16 +1,15 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Text.Json.Nodes;
-using LGforWin.Models;
+using TVControlForWin.Models;
 
-namespace LGforWin.Services;
-
-public enum TvStatus { Disconnected, Connecting, AwaitingPairing, Connected, Error }
+namespace TVControlForWin.Services;
 
 /// <summary>
-/// High-level controller for one TV: owns the WebOsClient, drives the connect/pair
+/// High-level controller for one LG webOS TV: owns the WebOsClient, drives the connect/pair
 /// lifecycle with auto-reconnect, and exposes a debounced SetBacklight so dragging the
 /// slider doesn't flood the socket.
 /// </summary>
-public sealed class TvController : IDisposable
+public sealed class WebOsController : ITvController
 {
     private const int DebounceMs = 120;
 
@@ -39,10 +38,17 @@ public sealed class TvController : IDisposable
     // back — on reconnect, or on a standby→awake transition over a still-open socket.
     private int? _missedWhileOff;
 
-    public TvController(TvDevice device) => _device = device;
+    public WebOsController(TvDevice device) => _device = device;
 
     public TvDevice Device => _device;
     public TvStatus Status { get; private set; } = TvStatus.Disconnected;
+    public bool SupportsBrightness => true;
+
+    // OLED Light is always available on webOS: nothing to set up, nothing that changes.
+    public bool AcceptsBrightness => true; // a value set while the TV is off is held (see SetBacklight)
+    public BrightnessSetup BrightnessSetup => BrightnessSetup.Ready;
+    public event Action? CapabilitiesChanged { add { } remove { } }
+    public void SetUpBrightness() { }
 
     /// <summary>
     /// Optional: returns the brightness to apply once, on the first successful connect this
@@ -55,14 +61,11 @@ public sealed class TvController : IDisposable
     /// <summary>Fires (status, optional message) whenever the connection state changes.</summary>
     public event Action<TvStatus, string?>? StatusChanged;
 
-    /// <summary>Fires after a successful pairing with a new client-key to persist.</summary>
-    public event Action<string>? ClientKeyUpdated;
+    /// <summary>Fires after a new client-key or the MAC address was stored on the device, to persist it.</summary>
+    public event Action? DeviceChanged;
 
     /// <summary>Fires when the TV's current backlight is read, so the UI can sync the slider.</summary>
     public event Action<int>? BacklightReported;
-
-    /// <summary>Fires after the TV's MAC address is learned via ARP, so it can be persisted for WoL.</summary>
-    public event Action<string>? MacAddressResolved;
 
     /// <summary>Fires when the TV reports a new power state ("Active", "Screen Off", "Suspend", …),
     /// so the UI can distinguish a live socket from a TV that's actually switched on.</summary>
@@ -93,7 +96,7 @@ public sealed class TvController : IDisposable
                 var client = await ConnectWithFallbackAsync(token).ConfigureAwait(false);
 
                 if (string.IsNullOrEmpty(_device.ClientKey))
-                    SetStatus(TvStatus.AwaitingPairing, "Accept the prompt on your TV");
+                    SetStatus(TvStatus.AwaitingPairing, "Accept the prompt on the TV");
 
                 var key = await client.RegisterAsync(
                     string.IsNullOrEmpty(_device.ClientKey) ? null : _device.ClientKey,
@@ -102,7 +105,7 @@ public sealed class TvController : IDisposable
                 if (!string.IsNullOrEmpty(key) && key != _device.ClientKey)
                 {
                     _device.ClientKey = key;
-                    ClientKeyUpdated?.Invoke(key);
+                    DeviceChanged?.Invoke();
                 }
 
                 SetStatus(TvStatus.Connected);
@@ -180,10 +183,7 @@ public sealed class TvController : IDisposable
             }
         }
 
-        throw new IOException(
-            $"Can't reach the TV at {_device.Host} on port 3000 or 3001. " +
-            "Check the IP, that the TV is on, and that network/mobile control is enabled.",
-            last);
+        throw new IOException("Can't reach the TV", last);
     }
 
     // Stays parked while the socket is healthy. A TV that loses power (or has its HDMI signal cut
@@ -214,7 +214,7 @@ public sealed class TvController : IDisposable
     private void OnClientDisconnected()
     {
         if (!_lifetime.IsCancellationRequested)
-            SetStatus(TvStatus.Disconnected, "Reconnecting…");
+            SetStatus(TvStatus.Disconnected, "Reconnecting");
     }
 
     /// <summary>Queues a backlight change; only the latest value within the debounce window is sent.</summary>
@@ -443,7 +443,10 @@ public sealed class TvController : IDisposable
         {
             if (hasMac) await WakeOnLan.SendAsync(_device.MacAddress, ct).ConfigureAwait(false);
 
-            if (_client is { IsConnected: true })
+            // Only once registered: a socket that's open but still mid-handshake refuses the
+            // query, which would read as "stale" and tear down a connection that's just forming
+            // (seen when "turn on when the PC starts" fires as the app launches).
+            if (_client is { IsConnected: true } && Status == TvStatus.Connected)
             {
                 var state = await GetPowerStateAsync(ct).ConfigureAwait(false);
                 if (state is null)
@@ -467,7 +470,8 @@ public sealed class TvController : IDisposable
             try { await Task.Delay(WakeRetryDelayMs, ct).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
 
-            if (_client is { IsConnected: true }) return; // it came back on its own
+            // Round again even if a socket is open by now: only the TV's own answer, at the top
+            // of the loop, says whether it's awake, in standby, or just has its screen off.
         }
     }
 
@@ -476,7 +480,7 @@ public sealed class TvController : IDisposable
     private void DropStaleClient()
     {
         CleanupClient();
-        if (!_lifetime.IsCancellationRequested) SetStatus(TvStatus.Disconnected, "Reconnecting…");
+        if (!_lifetime.IsCancellationRequested) SetStatus(TvStatus.Disconnected, "Reconnecting");
     }
 
     /// <summary>
@@ -493,12 +497,18 @@ public sealed class TvController : IDisposable
             return;
         }
 
-        if (state is null && _client is { IsConnected: true }) DropStaleClient();
+        // Silence only means "stale" once registered: mid-handshake (or while the TV shows its
+        // accept prompt) the query is refused, and dropping the socket would restart pairing.
+        if (state is null && _client is { IsConnected: true } && Status == TvStatus.Connected) DropStaleClient();
         await PowerOnAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>True when the TV can be woken over the network (MAC already learned).</summary>
     public bool CanWake => !string.IsNullOrEmpty(_device.MacAddress);
+
+    // webOS pairs by itself: the TV shows an accept prompt during registration, no code to type.
+    public void RequestPairing() { }
+    public void SubmitPairingCode(string code) { }
 
     // ARP the TV's MAC once per device while it's reachable, so WoL works after it goes off.
     private void ResolveMacInBackground(CancellationToken token)
@@ -511,7 +521,7 @@ public sealed class TvController : IDisposable
             if (mac is null) return;
             _device.MacAddress = mac;
             Log.Write($"{_device.Host}: MAC learned {mac}");
-            MacAddressResolved?.Invoke(mac);
+            DeviceChanged?.Invoke();
         }, token);
     }
 

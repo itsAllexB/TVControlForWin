@@ -1,13 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.Input;
-using LGforWin.ViewModels;
+using TVControlForWin.ViewModels;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 
-namespace LGforWin.Views;
+namespace TVControlForWin.Views;
 
 public sealed partial class MainWindow : Window
 {
@@ -24,7 +25,7 @@ public sealed partial class MainWindow : Window
         VM = vm;
         InitializeComponent();
 
-        Title = "LGforWin";
+        Title = "TVControlForWin";
 
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = GetDpiForWindow(hwnd) / 96.0;
@@ -59,10 +60,29 @@ public sealed partial class MainWindow : Window
             SaveWindowSize();
             e.Cancel = true;
             AppWindow.Hide();
+            VM.Updates.NotifyWindowHidden(); // a downloaded update can go in now
         };
 
-        // Start on Home.
-        NavView.SelectedItem = NavView.MenuItems[0];
+        // A waiting update shows as a dot on the Settings tab and in the tray icon's tooltip.
+        VM.Updates.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UpdateViewModel.HasUpdate)) ShowUpdateWaiting();
+        };
+        ShowUpdateWaiting();
+
+        // Start on Home, or on the page named by "--page <tag>" (home, schedule, power,
+        // hotkeys, osd, settings) — handy for opening straight onto the page being worked on.
+        NavView.SelectedItem = StartPageItem() ?? NavView.MenuItems[0];
+    }
+
+    private NavigationViewItem? StartPageItem()
+    {
+        var args = Environment.GetCommandLineArgs();
+        var at = Array.IndexOf(args, "--page");
+        if (at < 0 || at + 1 >= args.Length) return null;
+        return NavView.MenuItems.Concat(NavView.FooterMenuItems)
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag as string, args[at + 1], StringComparison.OrdinalIgnoreCase));
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -122,7 +142,15 @@ public sealed partial class MainWindow : Window
         Activate();
     }
 
-    private void Quit()
+    private void ShowUpdateWaiting()
+    {
+        var waiting = VM.Updates.HasUpdate;
+        UpdateBadge.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
+        TrayIcon.ToolTipText = waiting ? "TVControlForWin, update available" : "TVControlForWin";
+    }
+
+    /// <summary>Exits the app for good (the window's own close button only hides it).</summary>
+    public void Quit()
     {
         SaveWindowSize();
         _allowClose = true;

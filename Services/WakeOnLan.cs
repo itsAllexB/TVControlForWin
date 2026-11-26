@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 
-namespace LGforWin.Services;
+namespace TVControlForWin.Services;
 
 /// <summary>
 /// Wake-on-LAN: resolves a TV's MAC address while it's reachable (ARP), and later wakes

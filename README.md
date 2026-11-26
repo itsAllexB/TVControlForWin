@@ -1,161 +1,197 @@
-# LGforWin
+# TVControlForWin
 
-A small native **WinUI 3** Windows app to control the **brightness (OLED Light)** of
-LG webOS TVs used as PC monitors — C2, C3, G-series and friends — over your LAN.
+**Change your TV's brightness and switch it on and off from your Windows PC.**
 
-OLED TVs have no DDC/CI hardware brightness, so the Windows brightness slider does
-nothing. The only real "brightness" control is the TV's **OLED Light (backlight)**
-picture setting. LGforWin drives that setting over the network so you can change it
-from your desk — with a slider, the system tray, or global hotkeys.
+If you use a TV as a monitor, you know the two annoyances: the Windows brightness slider
+does nothing, and the TV stays on when the PC goes to sleep. TVControlForWin talks to the
+TV over your home network and takes care of both.
 
 <p align="center">
-  <img src="docs/screenshots/home.png" alt="LGforWin home screen" width="820">
+  <img src="docs/screenshots/home.png" alt="TVControlForWin with two TVs" width="820">
 </p>
-
-## Download
-
-**[⬇ Download LGforWin v2.1.1](https://github.com/itsAllexB/LGforWin/releases/latest)**
-
-| | |
-|---|---|
-| [`LGforWin-2.1.1-setup.exe`](https://github.com/itsAllexB/LGforWin/releases/latest/download/LGforWin-2.1.1-setup.exe) | Installer — Start-menu shortcut and an uninstall entry. |
-| [`LGforWin-2.1.1-win-x64.zip`](https://github.com/itsAllexB/LGforWin/releases/latest/download/LGforWin-2.1.1-win-x64.zip) | Portable — unzip and run `LGforWin.exe`. |
-
-64-bit Windows 10 1809 or newer. Nothing else to install — the .NET runtime and the
-Windows App SDK are bundled. The build isn't code-signed yet, so SmartScreen shows an
-"unrecognized app" warning on first run: choose **More info → Run anyway**.
-
-## Features
-
-- **Find TVs automatically** — one click scans the LAN over SSDP and adds any webOS TV
-  it finds, so you never have to hunt for an IP address. Adding by IP still works.
-- **Power automation** — turn the TVs on and off with the PC: at startup, on sleep,
-  on shutdown, and following Windows' display-sleep timer (blank the panel for an
-  instant resume, or power off fully). Waking uses Wake-on-LAN.
-- Add TVs by IP; **pair once** (accept the on-screen prompt), then it reconnects
-  silently forever using the stored client-key. Secure `wss://:3001` with automatic
-  fallback to `ws://:3000`.
-- Per-TV **OLED Light slider (0–100)** that pushes changes live (debounced).
-- **Global hotkeys** (customizable combo) that adjust the TV on the screen your
-  **cursor** is on — pair each TV to its Windows monitor so it knows which is which.
-  Ten points per press by default, adjustable 1–25.
-- **On-screen display** — a Windows 11-style brightness overlay on the hotkey, with
-  configurable position, screen, duration and optional TV name.
-- **Schedules** — up to 10 daily brightness rules, with catch-up on startup, after PC
-  sleep, and for TVs that were off when a schedule fired (applied the moment they're back).
-- **System tray** icon — closing hides to tray; optional **launch at sign-in**
-  (normal window / minimized / tray).
-- **Import / export** all settings; light / dark / system theme.
-- Remembers multiple TVs, their last brightness, and the window size.
-
-## On-screen display
-
-Nudge brightness with the hotkeys and a Windows 11-style overlay slides in — on the
-screen of the TV you're adjusting:
 
 <p align="center">
-  <img src="docs/screenshots/overlay.png" alt="Brightness on-screen display overlay">
+  <b><a href="https://github.com/itsAllexB/TVControlForWin/releases/latest">⬇ Download the latest version</a></b><br>
+  Windows 10 or 11 (64-bit) · free and open source
 </p>
 
-## Screens
+## What it does
+
+- **Brightness slider** for each TV, right on your desktop.
+- **Keyboard shortcut** (`Ctrl + Alt + ↑ / ↓`) that changes the TV your mouse is on, with
+  a small on-screen bar like the Windows volume one.
+- **Schedules**, for example bright in the morning and dim at night.
+- **Power that follows the PC**: the TV turns on when the PC starts or wakes, and off when
+  it sleeps, shuts down or the screens time out.
+- **Stays out of the way** in the system tray, and can start with Windows.
+- **Keeps itself up to date.**
+
+## Which TVs work
+
+| TV | Brightness | On / off |
+|---|:-:|:-:|
+| **LG** with webOS (C2, C3, G-series and similar) | ✅ | ✅ |
+| **TCL** with Google TV | ✅ after a [one-time setup](#brightness-on-a-tcl) | ✅ |
+| Other **Google TV / Android TV** (Sony, Philips, Hisense, Xiaomi, Chromecast…) | not yet | ✅ |
+
+Samsung, Roku, Fire TV and Hisense VIDAA TVs are not supported.
+
+Tested on an LG OLED42C3 and a TCL 65C765. No rooting or developer firmware needed.
+
+## Install
+
+1. Download **`TVControlForWin-…-setup.exe`** from the
+   [latest release](https://github.com/itsAllexB/TVControlForWin/releases/latest) and run it.
+   Prefer no installer? Take the **`.zip`**, unzip it anywhere and run `TVControlForWin.exe`.
+2. Windows may show a blue "Windows protected your PC" box, because the app isn't
+   code-signed yet. Choose **More info**, then **Run anyway**.
+3. The installer asks whether to install for everyone or just for you. Both work. With
+   "just for me", updates install by themselves; with "everyone", you confirm each one.
+
+Coming from LGforWin? Install over it. Your TVs and settings carry over.
+
+## Set up your TV
+
+1. Make sure the TV is on, and on the same network as the PC.
+2. Open TVControlForWin and select **Find TVs**. Pick your TV and select **Add**.
+   You can also type the TV's IP address and select **Add TV**.
+3. Pair it, once:
+   - **LG**: accept the prompt that appears on the TV.
+   - **Google TV**: the TV shows a code. Type it into the app and select **Confirm**.
+4. More than one screen? On each TV's card, choose which Windows **Screen** it is. That's
+   how the keyboard shortcut knows which TV your mouse is on.
+
+### Brightness on a TCL
+
+TCL keeps brightness behind Android's debugging switch, so it needs turning on once:
+
+1. On the TV, open **Settings → System → About** and press OK on **Android TV OS build**
+   seven times.
+2. Open **Settings → System → Developer options** and turn on **USB debugging**. (No USB
+   cable involved. On a TV this switch also covers the network.)
+3. In the app, select **Set up** on the TV's card.
+4. On the TV, tick **Always allow** and select **Allow**.
+
+The TV then gets a slider and works with schedules and the shortcut like an LG does.
+
+### Letting the PC turn the TV on
+
+A TV can only be woken while it stays connected in standby. That's a setting on the TV:
+
+- **LG**: turn on **Quick Start+** (also called *Turn on via Wi-Fi*, depending on the model).
+- **Google TV**: **Settings → System → Power & Energy → Energy Modes → Increased**.
+  Older models call it *Quick start* or *Wake on LAN*.
+
+Turning the TV *off* from the PC works without any of this.
+
+## Using it
+
+### Keyboard shortcut
+
+`Ctrl + Alt + ↑` and `Ctrl + Alt + ↓` change brightness by 10. On the **Hotkeys** page you
+can change the keys, the step, and whether the shortcut controls the TV under the mouse,
+all TVs, or always the same one.
+
+<p align="center">
+  <img src="docs/screenshots/overlay.png" alt="The on-screen brightness bar">
+</p>
+
+### Schedules and power
 
 |  |  |
 |:--|:--|
-| **Power** — follow the PC's sleep, shutdown and display timer | **Schedules** — up to 10 daily rules |
-| ![Power](docs/screenshots/power.png) | ![Schedules](docs/screenshots/schedule.png) |
-| **Hotkeys** — cursor-targeted, customizable combo | **On-screen display settings** |
-| ![Hotkeys](docs/screenshots/hotkeys.png) | ![On-screen display settings](docs/screenshots/osd.png) |
-| **Settings** — theme, autostart, import/export | |
-| ![Settings](docs/screenshots/settings.png) | |
+| **Schedule**: up to 10 times of day, each for all TVs or just some | **Power**: one set of rules for all TVs, or separate rules per TV |
+| ![Schedule page](docs/screenshots/schedule.png) | ![Power page](docs/screenshots/power.png) |
 
-## How it works (protocol)
+A schedule that fires while a TV is off isn't lost: the TV gets that brightness the moment
+it's back.
 
-webOS speaks **SSAP over a WebSocket** at `ws://<tv-ip>:3000`:
+"Screen off" blanks an LG's panel and brings the picture back instantly. Keep in mind that
+most TVs switch themselves off after a few minutes without a signal, so use "turn on when
+the screens turn back on" together with it.
 
-1. **Pair** — send a registration handshake. The TV shows an accept prompt and returns
-   a `client-key`, which we persist and reuse so it never prompts again.
-2. **Set brightness** — `ssap://com.webos.settingsservice/setSystemSettings` with
-   `{ "category": "picture", "settings": { "backlight": "<0-100>" } }`.
-   (Falls back to `ssap://settings/setSystemSettings` on firmware that rejects the
-   internal URI.)
-3. **Read current** — `ssap://settings/getSystemSettings` to initialise the slider.
-4. **Power** — `ssap://system/turnOff` to switch off, and
-   `…tvpower/power/turnOffScreen` / `turnOnScreen` to blank and restore just the panel.
-   `…tvpower/power/getPowerState` reports `Active` / `Screen Off` / `Suspend`, which
-   doubles as a liveness probe: a TV that loses power doesn't close the WebSocket, so
-   without asking it we'd keep reporting "connected" to a set that's long gone.
-5. **Wake** — a TV that's off can't be reached over SSAP at all, so waking is a
-   Wake-on-LAN magic packet to the MAC learned via ARP while it was still reachable.
-   The TV needs **Quick Start+** (or "Turn on via Wi-Fi") enabled to answer it.
+### Everything else
 
-Works on **stock TVs — no rooting required.** Prior art: bscpylgtv, ColorControl, lgtv2.
+|  |  |
+|:--|:--|
+| **Hotkeys** | **On-screen display** |
+| ![Hotkeys page](docs/screenshots/hotkeys.png) | ![On-screen display page](docs/screenshots/osd.png) |
+| **Settings**: theme, start with Windows, backup, updates | |
+| ![Settings page](docs/screenshots/settings.png) | |
 
-## Project layout
+## Updates
 
-| Path | Purpose |
-|------|---------|
-| `Services/WebOsClient.cs` | Low-level SSAP WebSocket: connect, pair, request/response |
-| `Services/TvController.cs` | Per-TV lifecycle, auto-reconnect, heartbeat, power, debounced SetBacklight |
-| `Services/SsdpDiscovery.cs` | LAN scan for webOS TVs (SSDP M-SEARCH + UPnP description) |
-| `Services/WakeOnLan.cs` | ARP MAC lookup + magic-packet wake |
-| `Services/PowerEventService.cs` | Windows sleep / resume / display-off / shutdown notifications |
-| `Services/SsapPayloads.cs` | Registration manifest + SSAP URIs |
-| `Services/DeviceStore.cs` | JSON persistence in `%LOCALAPPDATA%\LGforWin` |
-| `Services/HotkeyService.cs` | Global hotkeys via `RegisterHotKey` |
-| `ViewModels/` | `MainViewModel`, `TvViewModel` (CommunityToolkit.Mvvm) |
-| `Views/MainWindow.xaml` | TV list, sliders, add/remove, tray icon |
-| `Program.cs` / `App.xaml.cs` | Custom entry point, single-instance, startup wiring |
+About once a day the app checks this page's releases for a newer version.
 
-## Building
+| Your copy | What happens |
+|---|---|
+| Installed just for you | Downloads and installs by itself while the window is closed. |
+| Installed for everyone | Downloads, then waits for you to select **Install** in Settings. A dot on the Settings tab tells you it's ready. |
+| Portable (zip) | Tells you there's a new version and opens the download page. |
 
-**Prerequisites**
+Both the daily check and the automatic install can be switched off under
+**Settings → Updates**.
 
-- .NET 8 SDK (`winget install Microsoft.DotNet.SDK.8`)
-- Visual Studio 2022/2026 with the **.NET desktop development** workload (provides the
-  WinUI/MSIX MSBuild tasks; the standalone .NET SDK alone is not enough).
+## Privacy
 
-**Build & run**
+- The app talks to your TVs over your own network. Nothing about you or your TVs is sent
+  anywhere.
+- The only time it goes online is to check GitHub for a new version and download it.
+- Your TVs and settings are saved on your PC, in `%LOCALAPPDATA%\TVControlForWin`.
+- A settings backup (**Settings → Export**) contains the keys your TVs gave the app when
+  you paired them. Keep that file to yourself.
 
-Open `LGforWin.sln` in Visual Studio and press **F5**, or from a terminal:
+## If something isn't working
 
-```powershell
-pwsh -File build.ps1 -Configuration Debug -Run
-```
+**Find TVs doesn't find my TV.**
+Check that the TV is on and on the same network (not a guest Wi-Fi). On older LG models,
+turn on **LG Connect Apps** in the TV's network settings. You can always add the TV by its
+IP address instead.
 
-**Package a release** — writes the portable zip and `setup.exe` to `dist\`:
+**The TV's card says "Can't reach the TV".**
+The TV is off or has left the network. Hover over that line for what to check.
 
-```powershell
-pwsh -File build.ps1 -Configuration Release -Package
-```
+**The PC can't turn the TV on.**
+See [Letting the PC turn the TV on](#letting-the-pc-turn-the-tv-on). A TV that has just
+installed a system update may also need switching on by hand once.
 
-The installer needs [Inno Setup 6](https://jrsoftware.org/isinfo.php)
-(`winget install JRSoftware.InnoSetup`); without it the zip is still produced.
+**My Google TV says "Power only" and has no slider.**
+Brightness works on TCL so far. Other brands keep that setting somewhere the app can't
+reach yet. Switching on and off works on all of them.
 
-> Note: build with **Visual Studio's MSBuild** (what `build.ps1` does), not
-> `dotnet build` — WinUI PRI generation needs the AppxPackage task that only ships
-> with VS, so `dotnet build` fails with `MSB4062`.
+**"No TV on this screen" pops up when I press the shortcut.**
+The app doesn't know which TV that screen is. Choose a **Screen** on each TV's card.
 
-## Usage
+**How do I remove it?**
+**Windows Settings → Apps → Installed apps → TVControlForWin → Uninstall.** Your settings
+stay in `%LOCALAPPDATA%\TVControlForWin`; delete that folder too if you want them gone.
 
-1. Make sure the TV is on the same network and **"LG Connect Apps" / mobile control**
-   is enabled (Settings → Network/Connection).
-2. Launch LGforWin and click **Find TVs** — pick yours from the list and hit **Add**.
-   (Or type a name + IP and click **Add TV**.)
-3. Accept the pairing prompt on the TV (one time).
-4. Drag the slider — brightness changes within ~150 ms. Use `Ctrl+Alt+Up/Down` anytime.
-5. Optional: on the **Power** page, choose what should happen to the TVs when the PC
-   starts, sleeps, shuts down, or Windows blanks the displays.
+Still stuck? [Open an issue](https://github.com/itsAllexB/TVControlForWin/issues) and say
+which TV model you have.
 
-> For the "turn on" rules, enable **Quick Start+** on the TV (General → Devices →
-> External Devices, wording varies) — that's what lets it answer Wake-on-LAN. Note that
-> once Windows sleeps a display it stops sending a picture, so the TV will usually
-> power *itself* off on "no signal" a few minutes later even if you chose "Screen off";
-> waking covers both cases.
+## For developers
 
-## Roadmap
+Build with `pwsh -File build.ps1 -Configuration Debug -Run` (needs Visual Studio with the
+.NET desktop workload). How the app talks to each kind of TV, the project layout and the
+release steps are in [docs/development.md](docs/development.md). Ideas and plans live in
+[Todo.md](Todo.md).
 
-Planned features and ideas are tracked in [`Todo.md`](Todo.md).
+Want another TV brand supported? That's the most useful contribution, and
+[docs/development.md](docs/development.md#adding-a-tv-brand) says where to start.
 
 ## License
 
-Licensed under the [GNU General Public License v3.0](LICENSE) © Alex Bolocan.
+Copyright © 2026 Alex Bolocan.
+
+TVControlForWin is free software: you can redistribute it and/or modify it under the terms
+of the [GNU Affero General Public License](LICENSE) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version
+(`AGPL-3.0-or-later`).
+
+It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+license for details.
+
+Releases up to v2.1.1, published as LGforWin, were licensed under GPL-3.0 and remain
+available under it. Third-party code and libraries are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

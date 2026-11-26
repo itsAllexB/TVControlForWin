@@ -1,79 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <Page
-    x:Class="LGforWin.Views.HotkeysPage"
+    x:Class="TVControlForWin.Views.HotkeysPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:TVControlForWin.ViewModels"
+    xmlns:controls="using:TVControlForWin.Controls">
 
-    <ScrollViewer Padding="24,12,24,24" HorizontalScrollMode="Disabled">
-        <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+    <Grid RowDefinitions="Auto,*">
+        <TextBlock Text="Hotkeys" Style="{StaticResource PageTitleStyle}" />
 
-            <!-- Header -->
-            <StackPanel Spacing="2">
-                <TextBlock Text="Hotkeys" Style="{ThemeResource TitleTextBlockStyle}" />
-                <TextBlock Text="Global keyboard shortcuts to change TV brightness while the app is minimised to the tray."
-                           Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <ScrollViewer Grid.Row="1" HorizontalScrollMode="Disabled">
+            <StackPanel Style="{StaticResource PageContentStyle}">
+
+                <!-- The modifier keys; the line under the label shows the whole shortcut. -->
+                <controls:SettingCard Header="Shortcut" Glyph="&#xE765;"
+                                      Description="{x:Bind VM.HotkeyComboText, Mode=OneWay}"
+                                      InfoText="Hold these keys and press the Up or Down arrow to change brightness. At least one key stays selected.">
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <CheckBox MinWidth="0" Content="Ctrl" Tag="ctrl" IsChecked="{x:Bind VM.HotkeyCtrl, Mode=OneWay}" Click="OnModifierClick" />
+                        <CheckBox MinWidth="0" Content="Alt" Tag="alt" IsChecked="{x:Bind VM.HotkeyAlt, Mode=OneWay}" Click="OnModifierClick" />
+                        <CheckBox MinWidth="0" Content="Shift" Tag="shift" IsChecked="{x:Bind VM.HotkeyShift, Mode=OneWay}" Click="OnModifierClick" />
+                        <CheckBox MinWidth="0" Content="Win" Tag="win" IsChecked="{x:Bind VM.HotkeyWin, Mode=OneWay}" Click="OnModifierClick" />
+                    </StackPanel>
+                </controls:SettingCard>
+
+                <controls:SettingCard Header="Brightness step" Glyph="&#xE706;">
+                    <NumberBox Width="150" Minimum="1" Maximum="25"
+                               SpinButtonPlacementMode="Inline"
+                               Value="{x:Bind VM.HotkeyStep, Mode=TwoWay}" />
+                </controls:SettingCard>
+
+                <!-- Which TV(s) the shortcut changes. Only with more than one TV. -->
+                <controls:SettingCard Header="Which TV" Glyph="&#xE7F4;"
+                                      Visibility="{x:Bind VM.HotkeyTargetVisibility, Mode=OneWay}"
+                                      InfoText="&quot;TV under the cursor&quot; changes the TV on the screen your cursor is on. Choose each TV's screen on the Home page. On a screen with no TV, nothing changes.">
+                    <ComboBox MinWidth="200"
+                              ItemsSource="{x:Bind VM.HotkeyTargets}"
+                              SelectedItem="{x:Bind VM.SelectedHotkeyTarget, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:TvChoice">
+                                <TextBlock Text="{x:Bind Name}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </controls:SettingCard>
             </StackPanel>
-
-            <!-- Shortcut -->
-            <Border Padding="16" CornerRadius="8"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <StackPanel Spacing="16">
-
-                    <!-- Modifiers -->
-                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Shortcut" />
-                            <TextBlock Text="Modifier keys, combined with the Up / Down arrows. At least one is required."
-                                       Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <CheckBox Content="Ctrl" Tag="ctrl" IsChecked="{x:Bind VM.HotkeyCtrl, Mode=OneWay}" Click="OnModifierClick" />
-                            <CheckBox Content="Alt" Tag="alt" IsChecked="{x:Bind VM.HotkeyAlt, Mode=OneWay}" Click="OnModifierClick" />
-                            <CheckBox Content="Shift" Tag="shift" IsChecked="{x:Bind VM.HotkeyShift, Mode=OneWay}" Click="OnModifierClick" />
-                            <CheckBox Content="Win" Tag="win" IsChecked="{x:Bind VM.HotkeyWin, Mode=OneWay}" Click="OnModifierClick" />
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- Live combo preview -->
-                    <Border Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" CornerRadius="6" Padding="12,8">
-                        <TextBlock>
-                            <Run Text="Current shortcut:  " Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <Run Text="{x:Bind VM.HotkeyComboText, Mode=OneWay}" FontWeight="SemiBold" />
-                        </TextBlock>
-                    </Border>
-
-                    <!-- Step size (moved here from Settings) -->
-                    <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Step size" />
-                            <TextBlock Text="How many points each press changes brightness."
-                                       Style="{ThemeResource CaptionTextBlockStyle}"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        </StackPanel>
-                        <NumberBox Grid.Column="1" Width="150" Minimum="1" Maximum="25"
-                                   SpinButtonPlacementMode="Inline"
-                                   Value="{x:Bind VM.HotkeyStep, Mode=TwoWay}" />
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <!-- Which TV -->
-            <Border Padding="16" CornerRadius="8"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <StackPanel Spacing="6">
-                    <TextBlock Text="Which TV does it change?" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                    <TextBlock Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                        <Run Text="The shortcut adjusts the TV on the screen your mouse cursor is on. With a single TV it always adjusts that one." />
-                        <LineBreak /><LineBreak />
-                        <Run Text="With several TVs, pair each one to its screen on the Home page. If your cursor is on a screen that isn't paired to a TV, nothing changes and a short reminder appears." />
-                    </TextBlock>
-                </StackPanel>
-            </Border>
-        </StackPanel>
-    </ScrollViewer>
+        </ScrollViewer>
+    </Grid>
 </Page>

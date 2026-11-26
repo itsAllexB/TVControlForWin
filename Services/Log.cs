@@ -1,12 +1,11 @@
-namespace LGforWin.Services;
+// SPDX-License-Identifier: AGPL-3.0-or-later
+namespace TVControlForWin.Services;
 
-/// <summary>Tiny append-only logger to %LOCALAPPDATA%\LGforWin\log.txt for diagnosing TV behaviour.</summary>
+/// <summary>Tiny append-only logger to %LOCALAPPDATA%\TVControlForWin\log.txt for diagnosing TV behaviour.</summary>
 public static class Log
 {
     private static readonly object Gate = new();
-    private static readonly string Path = System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LGforWin", "log.txt");
+    private static readonly string Path = System.IO.Path.Combine(AppPaths.DataDir, "log.txt");
 
     public static void Write(string message)
     {

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <Window
-    x:Class="LGforWin.Views.MainWindow"
+    x:Class="TVControlForWin.Views.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:tb="using:H.NotifyIcon">
@@ -13,10 +14,10 @@
 
         <tb:TaskbarIcon x:Name="TrayIcon"
                         IconSource="ms-appx:///Assets/app.ico"
-                        ToolTipText="LGforWin — LG TV brightness">
+                        ToolTipText="TVControlForWin">
             <tb:TaskbarIcon.ContextFlyout>
                 <MenuFlyout>
-                    <MenuFlyoutItem x:Name="MenuShow" Text="Show LGforWin" />
+                    <MenuFlyoutItem x:Name="MenuShow" Text="Open TVControlForWin" />
                     <MenuFlyoutSeparator />
                     <MenuFlyoutItem x:Name="MenuQuit" Text="Quit" />
                 </MenuFlyout>
@@ -27,7 +28,7 @@
              regions, and hosts the nav pane-toggle button. -->
         <TitleBar x:Name="AppTitleBar" Grid.Row="0"
                   Height="48"
-                  Title="LGforWin"
+                  Title="TVControlForWin"
                   IsBackButtonVisible="False"
                   IsPaneToggleButtonVisible="False">
             <TitleBar.IconSource>
@@ -73,6 +74,11 @@
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE713;" />
                     </NavigationViewItem.Icon>
+                    <!-- A dot while an app update is waiting (see the Updates section in Settings). -->
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge x:Name="UpdateBadge" Visibility="Collapsed"
+                                   Style="{ThemeResource AttentionDotInfoBadgeStyle}" />
+                    </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 

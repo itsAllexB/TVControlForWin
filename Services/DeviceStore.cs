@@ -1,11 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Text.Json;
-using LGforWin.Models;
+using TVControlForWin.Models;
 
-namespace LGforWin.Services;
+namespace TVControlForWin.Services;
 
 /// <summary>
 /// Loads and saves the list of TVs (incl. their client-keys) plus app settings to
-/// %LOCALAPPDATA%\LGforWin. Client-key reuse is what avoids re-pairing every launch.
+/// %LOCALAPPDATA%\TVControlForWin. Client-key reuse is what avoids re-pairing every launch.
 /// </summary>
 public sealed class DeviceStore
 {
@@ -17,10 +18,7 @@ public sealed class DeviceStore
 
     public DeviceStore()
     {
-        _dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LGforWin");
-        Directory.CreateDirectory(_dir);
+        _dir = AppPaths.DataDir;
         _devicesPath = Path.Combine(_dir, "devices.json");
         _settingsPath = Path.Combine(_dir, "settings.json");
     }
@@ -55,11 +53,11 @@ public sealed class DeviceStore
     public string SerializeBackup(IEnumerable<TvDevice> devices, AppSettings settings) =>
         JsonSerializer.Serialize(new BackupData { Devices = devices.ToList(), Settings = settings }, JsonOpts);
 
-    /// <summary>Parses a backup string; throws if the file isn't a valid LGforWin backup.</summary>
+    /// <summary>Parses a backup string; throws if the file isn't a valid TVControlForWin backup.</summary>
     public BackupData DeserializeBackup(string json)
     {
         var data = JsonSerializer.Deserialize<BackupData>(json)
-                   ?? throw new InvalidDataException("Not a valid LGforWin backup file.");
+                   ?? throw new InvalidDataException("Not a valid TVControlForWin backup file.");
         data.Devices ??= new List<TvDevice>();
         data.Settings ??= new AppSettings();
         return data;
@@ -106,6 +104,20 @@ public sealed class AppSettings
     /// MOD_WIN=8). Combined with the Up/Down arrow keys. Default = Ctrl+Alt (3).</summary>
     public int HotkeyModifiers { get; set; } = 3;
 
+    private string _hotkeyTarget = "";
+
+    /// <summary>
+    /// Which TV the brightness hotkeys change: "" (default) = the TV on the screen under the mouse
+    /// cursor, "all" (<see cref="RuleTargets.AllTvs"/>) = every TV whose brightness can be set,
+    /// otherwise a <see cref="TvDevice.Id"/> = always that TV. An id that no longer exists
+    /// behaves like "".
+    /// </summary>
+    public string HotkeyTarget
+    {
+        get => _hotkeyTarget;
+        set => _hotkeyTarget = value ?? "";
+    }
+
     /// <summary>Whether the app registers itself to launch at Windows sign-in.</summary>
     public bool StartWithWindows { get; set; } = false;
 
@@ -132,16 +144,35 @@ public sealed class AppSettings
     /// <summary>On-screen display (brightness OSD) preferences. Never null after load.</summary>
     public OsdSettings Osd { get; set; } = new();
 
-    /// <summary>TV power automation (follow PC startup/sleep/shutdown/display sleep). Never null after load.</summary>
+    /// <summary>Look on GitHub for a newer version of the app, about once a day.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>Download a newer version when one is found and install it while the window is
+    /// closed. Only does anything while <see cref="CheckForUpdates"/> is on.</summary>
+    public bool InstallUpdatesAutomatically { get; set; } = true;
+
+    /// <summary>When the last update check got an answer, so restarts don't each trigger one.</summary>
+    public DateTime? LastUpdateCheckUtc { get; set; }
+
+    /// <summary>The version the last unattended install was for. If the app is still older than
+    /// this, that install failed, and it isn't tried again without being asked for.</summary>
+    public string? UnattendedInstallTried { get; set; }
+
+    /// <summary>TV power automation (follow PC startup/sleep/shutdown/display sleep), shared by every
+    /// TV without rules of its own (<see cref="TvDevice.Power"/>). Never null after load.</summary>
     public PowerSettings Power { get; set; } = new();
 }
 
 /// <summary>
-/// Rules for automatically turning the TVs on and off with the PC. All rules apply to
-/// every TV. Everything is off by default — pure opt-in.
+/// Rules for automatically turning the TVs on and off with the PC. One set is shared
+/// (<see cref="AppSettings.Power"/>); a TV can also carry its own (<see cref="TvDevice.Power"/>).
+/// Everything is off by default — pure opt-in.
 /// </summary>
 public sealed class PowerSettings
 {
+    /// <summary>An independent copy, e.g. to start a TV's own rules from the shared ones.</summary>
+    public PowerSettings Clone() => (PowerSettings)MemberwiseClone();
+
     /// <summary>Wake the TVs (WoL) whenever the app starts — with autostart on, that's sign-in.</summary>
     public bool OnAppStart { get; set; }
 

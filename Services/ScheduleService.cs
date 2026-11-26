@@ -1,17 +1,18 @@
-using LGforWin.ViewModels;
+// SPDX-License-Identifier: AGPL-3.0-or-later
+using TVControlForWin.ViewModels;
 using Microsoft.UI.Dispatching;
 
-namespace LGforWin.Services;
+namespace TVControlForWin.Services;
 
 /// <summary>
 /// Polls once per ~20s and applies any enabled schedule whose time matches the current
-/// minute, exactly once per occurrence. Applies the target brightness to all TVs.
+/// minute, exactly once per occurrence, to the TVs that schedule targets.
 ///
 /// The minute-match means a schedule whose time passes while the timer isn't ticking —
 /// PC asleep or hibernating — would silently never fire. So each tick also watches for
-/// a gap since the previous tick, and applies the schedule that should be in effect
-/// after one. (If the TVs are still off at that moment, TvController holds the value
-/// and delivers it when they come back.)
+/// a gap since the previous tick, and sets each TV to the schedule that should be in effect
+/// for it after one. (If a TV is still off at that moment, WebOsController holds the value
+/// and delivers it when the TV comes back.)
 /// </summary>
 public sealed class ScheduleService : IDisposable
 {
@@ -26,8 +27,9 @@ public sealed class ScheduleService : IDisposable
     private readonly HashSet<int> _firedThisMinute = new();
     private DateTime _lastTick = DateTime.MinValue;
 
-    /// <summary>Raised on the UI thread after a schedule applies its brightness (value in %).</summary>
-    public event Action<int>? ScheduleApplied;
+    /// <summary>Raised on the UI thread after a schedule changed brightness, with the TVs it changed
+    /// (never empty; their new values are already set).</summary>
+    public event Action<IReadOnlyList<TvViewModel>>? ScheduleApplied;
 
     public ScheduleService(MainViewModel vm, DispatcherQueue dispatcher)
     {
@@ -44,17 +46,10 @@ public sealed class ScheduleService : IDisposable
         var previousTick = _lastTick;
         _lastTick = now;
         if (previousTick != DateTime.MinValue && now - previousTick > GapThreshold
-            && AnyScheduleFiresBetween(previousTick, now))
+            && RuleTargets.AnyFiresBetween(_vm.Settings.Schedules, previousTick, now))
         {
             Log.Write($"schedule: catching up after a {(int)(now - previousTick).TotalMinutes} min gap (PC was asleep)");
-            _dispatcher.TryEnqueue(() =>
-            {
-                if (_vm.GetCurrentScheduledBrightness() is int value)
-                {
-                    _vm.ApplyBrightnessAll(value);
-                    ScheduleApplied?.Invoke(value);
-                }
-            });
+            _dispatcher.TryEnqueue(() => Report(_vm.CatchUpSchedules(previousTick, now)));
         }
 
         var minute = now.ToString("yyyyMMddHHmm");
@@ -70,33 +65,16 @@ public sealed class ScheduleService : IDisposable
             var s = schedules[i];
             if (s.Enabled && s.Hour == now.Hour && s.Minute == now.Minute && _firedThisMinute.Add(i))
             {
-                var value = s.Brightness;
-                _dispatcher.TryEnqueue(() =>
-                {
-                    _vm.ApplyBrightnessAll(value);
-                    ScheduleApplied?.Invoke(value);
-                });
-                Log.Write($"schedule {s.Hour:00}:{s.Minute:00} fired -> {value}%");
+                _dispatcher.TryEnqueue(() => Report(_vm.ApplySchedule(s)));
+                var targets = s.TvIds.Count == 0 ? "all TVs" : $"{s.TvIds.Count} chosen TV(s)";
+                Log.Write($"schedule {s.Hour:00}:{s.Minute:00} fired -> {s.Brightness}% ({targets})");
             }
         }
     }
 
-    // True when at least one enabled schedule's daily time falls inside (from, to] —
-    // i.e. it would have fired during that window had the PC been awake.
-    private bool AnyScheduleFiresBetween(DateTime from, DateTime to)
+    private void Report(IReadOnlyList<TvViewModel> changed)
     {
-        var enabled = _vm.Settings.Schedules.Where(s => s.Enabled).ToList();
-        if (enabled.Count == 0) return false;
-        if (to - from >= TimeSpan.FromDays(1)) return true; // slept a day+ — every schedule passed
-
-        foreach (var s in enabled)
-        {
-            // First occurrence of this schedule's time strictly after `from`.
-            var occurrence = from.Date.AddHours(s.Hour).AddMinutes(s.Minute);
-            if (occurrence <= from) occurrence = occurrence.AddDays(1);
-            if (occurrence <= to) return true;
-        }
-        return false;
+        if (changed.Count > 0) ScheduleApplied?.Invoke(changed);
     }
 
     public void Dispose()

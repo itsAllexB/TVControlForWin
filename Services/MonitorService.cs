@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Windows.Graphics;
 
-namespace LGforWin.Services;
+namespace TVControlForWin.Services;
 
 /// <summary>A connected display, identified by a stable EDID-based id and its friendly name.</summary>
 public sealed class MonitorInfo

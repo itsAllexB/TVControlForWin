@@ -1,10 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later AND MIT
+// Portions copyright (c) Microsoft Corporation: ported from Microsoft PowerToys, MIT License.
+// See THIRD-PARTY-NOTICES.md.
 using System.Collections.Generic;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 
-namespace LGforWin.Controls;
+namespace TVControlForWin.Controls;
 
 /// <summary>
 /// A <see cref="SystemBackdrop"/> that renders desktop acrylic and stays in the active visual

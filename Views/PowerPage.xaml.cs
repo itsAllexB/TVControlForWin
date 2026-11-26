@@ -1,8 +1,9 @@
-using LGforWin.ViewModels;
+// SPDX-License-Identifier: AGPL-3.0-or-later
+using TVControlForWin.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
-namespace LGforWin.Views;
+namespace TVControlForWin.Views;
 
 public sealed partial class PowerPage : Page
 {

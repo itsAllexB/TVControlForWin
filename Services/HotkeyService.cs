@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Runtime.InteropServices;
 
-namespace LGforWin.Services;
+namespace TVControlForWin.Services;
 
 public enum HotkeyAction { BrightnessUp, BrightnessDown }
 
@@ -34,7 +35,7 @@ public sealed class HotkeyService : IDisposable
     {
         _modifiers = modifiers;
         if (_thread is not null) return;
-        _thread = new Thread(ThreadProc) { IsBackground = true, Name = "LGforWin-Hotkeys" };
+        _thread = new Thread(ThreadProc) { IsBackground = true, Name = "TVControlForWin-Hotkeys" };
         _thread.SetApartmentState(ApartmentState.STA);
         _thread.Start();
         _ready.Wait(2000);
