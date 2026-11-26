@@ -18,15 +18,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/itsAllexB/TVControlForWin/releases/latest"><img src="docs/images/download.svg" alt="Download the latest version" width="300"></a>
+  <a href="https://github.com/itsAllexB/TVControlForWin/releases/latest"><img src="docs/images/download.svg" alt="Download the latest version" width="220"></a>
 </p>
 
 <p align="center">
-  <img src="docs/images/home.png" alt="TVControlForWin with two TVs" width="860">
+  <img src="docs/images/screen-home.png" alt="TVControlForWin with two TVs" width="818"><br>
+  <img src="docs/images/brightness-bar.png" alt="The brightness bar that appears when you press the shortcut" width="780">
 </p>
 
 <p align="center">
-  <img src="docs/images/overlay.png" alt="The brightness bar that appears when you press the shortcut" width="600"><br>
   <sub>Press <code>Ctrl + Alt + ↑ / ↓</code> and a brightness bar slides in, just like the Windows volume one.</sub>
 </p>
 
@@ -135,7 +135,7 @@ screen, or switched off on the **On-screen display** page.
 |  |  |
 |:--|:--|
 | **Schedule**: up to 10 times of day, each for all TVs or just some | **Power**: one set of rules for all TVs, or separate rules per TV |
-| ![Schedule page](docs/images/schedule.png) | ![Power page](docs/images/power.png) |
+| ![Schedule page](docs/images/screen-schedule.png) | ![Power page](docs/images/screen-power.png) |
 
 A schedule that fires while a TV is off isn't lost: the TV gets that brightness the moment
 it's back.
@@ -149,9 +149,9 @@ the screens turn back on" together with it.
 |  |  |
 |:--|:--|
 | **Hotkeys** | **On-screen display** |
-| ![Hotkeys page](docs/images/hotkeys.png) | ![On-screen display page](docs/images/osd.png) |
+| ![Hotkeys page](docs/images/screen-hotkeys.png) | ![On-screen display page](docs/images/screen-osd.png) |
 | **Settings**: theme, start with Windows, backup, updates | |
-| ![Settings page](docs/images/settings.png) | |
+| ![Settings page](docs/images/screen-settings.png) | |
 
 ## Updates
 
