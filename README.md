@@ -18,11 +18,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/itsAllexB/TVControlForWin/releases/latest"><img src="https://img.shields.io/badge/Download-latest_version-0078D4?style=for-the-badge" alt="Download the latest version"></a>
+  <a href="https://github.com/itsAllexB/TVControlForWin/releases/latest"><img src="https://img.shields.io/badge/Download_latest_version-0078D4" alt="Download the latest version" height="36"></a>
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/home.png" alt="TVControlForWin with two TVs" width="820">
+  <img src="docs/screenshots/home.png" alt="TVControlForWin with two TVs" width="860">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/overlay.png" alt="The brightness bar that appears when you press the shortcut" width="600"><br>
+  <sub>Press <code>Ctrl + Alt + ↑ / ↓</code> and a brightness bar slides in, just like the Windows volume one.</sub>
 </p>
 
 <p align="center">
@@ -31,7 +36,8 @@
   <a href="#install">Install</a> ·
   <a href="#set-up-your-tv">Set up your TV</a> ·
   <a href="#using-it">Using it</a> ·
-  <a href="#if-something-isnt-working">Help</a>
+  <a href="#if-something-isnt-working">Help</a> ·
+  <a href="#contributing">Contributing</a>
 </p>
 
 ## Why
@@ -121,11 +127,8 @@ Turning the TV *off* from the PC works without any of this.
 
 `Ctrl + Alt + ↑` and `Ctrl + Alt + ↓` change brightness by 10. On the **Hotkeys** page you
 can change the keys, the step, and whether the shortcut controls the TV under the mouse,
-all TVs, or always the same one.
-
-<p align="center">
-  <img src="docs/screenshots/overlay.png" alt="The on-screen brightness bar">
-</p>
+all TVs, or always the same one. The bar that appears can be moved, shown on a different
+screen, or switched off on the **On-screen display** page.
 
 ### Schedules and power
 
@@ -200,15 +203,21 @@ stay in `%LOCALAPPDATA%\TVControlForWin`; delete that folder too if you want the
 Still stuck? [Open an issue](https://github.com/itsAllexB/TVControlForWin/issues) and say
 which TV model you have.
 
-## For developers
+## Contributing
 
-Build with `pwsh -File build.ps1 -Configuration Debug -Run` (needs Visual Studio with the
-.NET desktop workload). How the app talks to each kind of TV, the project layout and the
-release steps are in [docs/development.md](docs/development.md). Ideas and plans live in
-[Todo.md](Todo.md).
+Contributions are welcome, and support for more TVs most of all.
 
-Want another TV brand supported? That's the most useful contribution, and
-[docs/development.md](docs/development.md#adding-a-tv-brand) says where to start.
+- **Have a TV that isn't supported, or a Google TV without the brightness slider?**
+  [Open an issue](https://github.com/itsAllexB/TVControlForWin/issues) with the model.
+  A plain "this works on my TV" report helps too.
+- **Want to add your TV's brand?** [Adding a TV brand](docs/development.md#adding-a-tv-brand)
+  shows where it plugs in, and how the TCL brightness call was found.
+- **Found a bug or have an idea?** Issues and pull requests are both fine.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the details. To build, run
+`pwsh -File build.ps1 -Configuration Debug -Run` (needs Visual Studio with the .NET desktop
+workload). How the app talks to each kind of TV and how the project is laid out is in
+[docs/development.md](docs/development.md), and plans live in [Todo.md](Todo.md).
 
 ## License
 
