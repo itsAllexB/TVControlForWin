@@ -1,30 +1,61 @@
-# TVControlForWin
+<p align="center">
+  <img src="docs/icon.png" alt="TVControlForWin icon" width="128">
+</p>
 
-**Change your TV's brightness and switch it on and off from your Windows PC.**
+<h1 align="center">TVControlForWin</h1>
 
-If you use a TV as a monitor, you know the two annoyances: the Windows brightness slider
-does nothing, and the TV stays on when the PC goes to sleep. TVControlForWin talks to the
-TV over your home network and takes care of both.
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-Windows_10_%7C_11-0078D4?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI%2BPHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0wIDBoMTEuNHYxMS40SDB6TTEyLjYgMEgyNHYxMS40SDEyLjZ6TTAgMTIuNmgxMS40VjI0SDB6TTEyLjYgMTIuNkgyNFYyNEgxMi42eiIvPjwvc3ZnPg%3D%3D" alt="Platform: Windows 10 and 11">
+  <a href="https://github.com/itsAllexB/TVControlForWin/releases/latest"><img src="https://img.shields.io/github/v/release/itsAllexB/TVControlForWin?label=release&color=2ea44f" alt="Latest release"></a>
+  <a href="https://github.com/itsAllexB/TVControlForWin/releases"><img src="https://img.shields.io/github/downloads/itsAllexB/TVControlForWin/total?label=downloads&color=2ea44f" alt="Downloads"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/.NET_8-WinUI_3-512BD4?logo=dotnet&logoColor=white" alt="Built with .NET 8 and WinUI 3">
+</p>
+
+<p align="center">
+  <b>Change your TV's brightness and switch it on and off from your Windows PC.</b><br>
+  A small native app for TVs used as monitors. Works with LG and Google TV, over your home network.
+</p>
+
+<p align="center">
+  <a href="https://github.com/itsAllexB/TVControlForWin/releases/latest"><img src="https://img.shields.io/badge/Download-latest_version-0078D4?style=for-the-badge" alt="Download the latest version"></a>
+</p>
 
 <p align="center">
   <img src="docs/screenshots/home.png" alt="TVControlForWin with two TVs" width="820">
 </p>
 
 <p align="center">
-  <b><a href="https://github.com/itsAllexB/TVControlForWin/releases/latest">⬇ Download the latest version</a></b><br>
-  Windows 10 or 11 (64-bit) · free and open source
+  <a href="#what-it-does">What it does</a> ·
+  <a href="#which-tvs-work">Which TVs work</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#set-up-your-tv">Set up your TV</a> ·
+  <a href="#using-it">Using it</a> ·
+  <a href="#if-something-isnt-working">Help</a>
 </p>
+
+## Why
+
+If you use a TV as a monitor, you know the two annoyances: the Windows brightness slider
+does nothing, and the TV stays on when the PC goes to sleep. TVControlForWin talks to the
+TV over your home network and takes care of both.
 
 ## What it does
 
-- **Brightness slider** for each TV, right on your desktop.
-- **Keyboard shortcut** (`Ctrl + Alt + ↑ / ↓`) that changes the TV your mouse is on, with
-  a small on-screen bar like the Windows volume one.
-- **Schedules**, for example bright in the morning and dim at night.
-- **Power that follows the PC**: the TV turns on when the PC starts or wakes, and off when
-  it sleeps, shuts down or the screens time out.
-- **Stays out of the way** in the system tray, and can start with Windows.
-- **Keeps itself up to date.**
+<table>
+  <tr>
+    <td width="50%" valign="top"><b>Brightness slider</b><br>One for each TV, right on your desktop.</td>
+    <td width="50%" valign="top"><b>Keyboard shortcut</b><br><code>Ctrl + Alt + ↑ / ↓</code> changes the TV your mouse is on, with a small on-screen bar like the Windows volume one.</td>
+  </tr>
+  <tr>
+    <td valign="top"><b>Schedules</b><br>Bright in the morning, dim at night, or whatever suits you.</td>
+    <td valign="top"><b>Power that follows the PC</b><br>The TV turns on when the PC starts or wakes, and off when it sleeps, shuts down or the screens time out.</td>
+  </tr>
+  <tr>
+    <td valign="top"><b>Stays out of the way</b><br>Lives in the system tray and can start with Windows.</td>
+    <td valign="top"><b>Keeps itself up to date</b><br>New versions arrive by themselves.</td>
+  </tr>
+</table>
 
 ## Which TVs work
 
