@@ -1,9 +1,10 @@
-using LGforWin.ViewModels;
+// SPDX-License-Identifier: AGPL-3.0-or-later
+using TVControlForWin.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 
-namespace LGforWin.Views;
+namespace TVControlForWin.Views;
 
 public sealed partial class OsdPage : Page
 {

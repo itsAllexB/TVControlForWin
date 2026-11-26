@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace LGforWin.Services;
+namespace TVControlForWin.Services;
 
 /// <summary>
 /// Low-level webOS SSAP client over a WebSocket. Handles the registration/pairing

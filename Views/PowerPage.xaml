@@ -1,142 +1,98 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <Page
-    x:Class="LGforWin.Views.PowerPage"
+    x:Class="TVControlForWin.Views.PowerPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:TVControlForWin.ViewModels"
+    xmlns:controls="using:TVControlForWin.Controls">
 
-    <ScrollViewer Padding="24,12,24,24" HorizontalScrollMode="Disabled">
-        <StackPanel Spacing="16" HorizontalAlignment="Stretch">
+    <Grid RowDefinitions="Auto,*">
+        <TextBlock Text="Power" Style="{StaticResource PageTitleStyle}" />
 
-            <!-- Header -->
-            <StackPanel Spacing="2">
-                <TextBlock Text="Power" Style="{ThemeResource TitleTextBlockStyle}" />
-                <TextBlock Text="Turn your TVs on and off together with your PC. These rules apply to all TVs and are off by default."
-                           Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            </StackPanel>
+        <ScrollViewer Grid.Row="1" HorizontalScrollMode="Disabled">
+            <StackPanel Style="{StaticResource PageContentStyle}">
 
-            <!-- Turn on -->
-            <StackPanel Spacing="8">
-                <TextBlock Text="Turn the TVs on" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                <Border Padding="16" CornerRadius="8"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                    <StackPanel Spacing="16">
+                <!-- Whose rules the controls below show: the shared ones, or one TV's. Only with more than one TV. -->
+                <StackPanel Spacing="4" Margin="0,0,0,20" Visibility="{x:Bind VM.PowerScopeVisibility, Mode=OneWay}">
+                    <controls:SettingCard Header="Rules for">
+                        <ComboBox MinWidth="200"
+                                  ItemsSource="{x:Bind VM.PowerScopes}"
+                                  SelectedItem="{x:Bind VM.SelectedPowerScope, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:TvChoice">
+                                    <TextBlock Text="{x:Bind Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </controls:SettingCard>
 
-                        <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="When the PC starts" />
-                                <TextBlock Text="Wake the TVs whenever the app launches — with &quot;Start with Windows&quot; on (Settings), that's every sign-in."
-                                           Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                            <ToggleSwitch Grid.Column="1" MinWidth="0"
-                                          IsOn="{x:Bind VM.PowerOnAppStart, Mode=TwoWay}" />
-                        </Grid>
+                    <controls:SettingCard Header="Separate rules for this TV"
+                                          Description="When off, it follows the rules for All TVs"
+                                          Visibility="{x:Bind VM.PowerSeparateVisibility, Mode=OneWay}">
+                        <ToggleSwitch MinWidth="0" IsOn="{x:Bind VM.PowerUseSeparateRules, Mode=TwoWay}" />
+                    </controls:SettingCard>
+                </StackPanel>
 
-                        <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="When the PC wakes from sleep" />
-                                <TextBlock Text="Wake the TVs when the PC resumes from sleep or hibernation."
-                                           Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                            <ToggleSwitch Grid.Column="1" MinWidth="0"
-                                          IsOn="{x:Bind VM.PowerOnResume, Mode=TwoWay}" />
-                        </Grid>
-
-                        <InfoBar IsOpen="True" IsClosable="False" Severity="Informational"
-                                 Message="Turning a TV on uses Wake-on-LAN. Enable it on the TV (Quick Start+ / “Turn on via Wi-Fi” under General → Devices/External Devices) and connect each TV once so its MAC address is learned." />
+                <!-- The rules. Read-only while a TV that follows the shared rules is selected. The
+                     section headers stay outside the read-only part so their info stays readable. -->
+                <StackPanel Style="{StaticResource SectionHeaderPanelStyle}" Margin="1,0,0,4">
+                    <TextBlock Text="Turn on" Style="{StaticResource SectionHeaderTextStyle}" />
+                    <controls:InfoTip Title="Turning TVs on"
+                                      Text="LG: on the TV, turn on Quick Start+ and &quot;Turn on via Wi-Fi&quot;. They're under General &gt; Devices, or General &gt; External Devices on some models. Then let the app connect once while the TV is on.&#10;&#10;Google TV: on the TV, set Settings &gt; System &gt; Power &amp; Energy &gt; Energy Modes to &quot;Increased (Always connected)&quot;, so it stays reachable in standby." />
+                </StackPanel>
+                <ContentControl IsTabStop="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                IsEnabled="{x:Bind VM.PowerRules.IsEditable, Mode=OneWay}">
+                    <StackPanel Spacing="4">
+                        <controls:SettingCard Header="When the app starts"
+                                              Description="At sign-in, if Start with Windows is on">
+                            <ToggleSwitch MinWidth="0" IsOn="{x:Bind VM.PowerRules.OnAppStart, Mode=TwoWay}" />
+                        </controls:SettingCard>
+                        <controls:SettingCard Header="When the PC wakes from sleep">
+                            <ToggleSwitch MinWidth="0" IsOn="{x:Bind VM.PowerRules.OnResume, Mode=TwoWay}" />
+                        </controls:SettingCard>
                     </StackPanel>
-                </Border>
-            </StackPanel>
+                </ContentControl>
 
-            <!-- Turn off -->
-            <StackPanel Spacing="8">
-                <TextBlock Text="Turn the TVs off" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                <Border Padding="16" CornerRadius="8"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                    <StackPanel Spacing="16">
-
-                        <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="When the PC goes to sleep" />
-                                <TextBlock Text="Turn the TVs off as the PC suspends or hibernates."
-                                           Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                            <ToggleSwitch Grid.Column="1" MinWidth="0"
-                                          IsOn="{x:Bind VM.PowerOffOnSleep, Mode=TwoWay}" />
-                        </Grid>
-
-                        <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="When the PC shuts down" />
-                                <TextBlock Text="Turn the TVs off on shutdown, restart or sign-out."
-                                           Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                            <ToggleSwitch Grid.Column="1" MinWidth="0"
-                                          IsOn="{x:Bind VM.PowerOffOnShutdown, Mode=TwoWay}" />
-                        </Grid>
+                <TextBlock Text="Turn off" Style="{StaticResource SectionHeaderStyle}" />
+                <ContentControl IsTabStop="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                IsEnabled="{x:Bind VM.PowerRules.IsEditable, Mode=OneWay}">
+                    <StackPanel Spacing="4">
+                        <controls:SettingCard Header="When the PC goes to sleep">
+                            <ToggleSwitch MinWidth="0" IsOn="{x:Bind VM.PowerRules.OffOnSleep, Mode=TwoWay}" />
+                        </controls:SettingCard>
+                        <controls:SettingCard Header="When the PC shuts down"
+                                              Description="Also on restart and sign-out">
+                            <ToggleSwitch MinWidth="0" IsOn="{x:Bind VM.PowerRules.OffOnShutdown, Mode=TwoWay}" />
+                        </controls:SettingCard>
                     </StackPanel>
-                </Border>
-            </StackPanel>
+                </ContentControl>
 
-            <!-- Follow Windows display sleep -->
-            <StackPanel Spacing="8">
-                <TextBlock Text="Follow Windows display sleep" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                <Border Padding="16" CornerRadius="8"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                    <StackPanel Spacing="16">
-
-                        <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="When Windows turns the displays off" />
-                                <TextBlock Text="React when the idle timer blanks your screens (Windows Settings → System → Power)."
-                                           Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                            <ToggleSwitch Grid.Column="1" MinWidth="0"
-                                          IsOn="{x:Bind VM.PowerFollowDisplayOff, Mode=TwoWay}" />
-                        </Grid>
-
-                        <ContentControl IsTabStop="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                                        IsEnabled="{x:Bind VM.PowerFollowDisplayOff, Mode=OneWay}">
-                            <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="What to do" />
-                                    <TextBlock Text="Screen off blanks the panel but keeps the TV running, so the picture returns instantly. Fully off saves the most power but comes back via Wake-on-LAN (a few seconds)."
-                                               Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                </StackPanel>
-                                <ComboBox Grid.Column="1" MinWidth="220"
-                                          SelectedIndex="{x:Bind VM.PowerDisplayOffAction, Mode=TwoWay}">
-                                    <ComboBoxItem Content="Screen off (instant resume)" />
-                                    <ComboBoxItem Content="Turn the TV fully off" />
-                                </ComboBox>
-                            </Grid>
-                        </ContentControl>
-
-                        <InfoBar IsOpen="True" IsClosable="False" Severity="Informational"
-                                 Message="Heads-up: once Windows sleeps a display it stops sending a picture, so after a few more minutes most LG TVs power themselves off on “no signal” — even with Screen off chosen. That's the TV's own setting, not this app. Waking handles both cases, so keep Wake-on-LAN enabled on the TV." />
-
-                        <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="When the displays wake" />
-                                <TextBlock Text="Bring the TVs back when you move the mouse or press a key."
-                                           Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            </StackPanel>
-                            <ToggleSwitch Grid.Column="1" MinWidth="0"
-                                          IsOn="{x:Bind VM.PowerFollowDisplayOn, Mode=TwoWay}" />
-                        </Grid>
+                <!-- Follow Windows turning the screens off after the idle time. -->
+                <StackPanel Style="{StaticResource SectionHeaderPanelStyle}">
+                    <TextBlock Text="Screen timeout" Style="{StaticResource SectionHeaderTextStyle}" />
+                    <controls:InfoTip Title="When Windows turns the screens off"
+                                      Text="Screen off: the picture goes dark but the TV stays on, so it comes back instantly. Google TVs can't do this and turn off instead.&#10;&#10;Turn off: saves more power. The TV takes a few seconds to come back.&#10;&#10;Most LG TVs turn themselves off a few minutes after the picture stops, even with Screen off. Keep &quot;Turn on via Wi-Fi&quot; on so the app can wake them." />
+                </StackPanel>
+                <ContentControl IsTabStop="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                IsEnabled="{x:Bind VM.PowerRules.IsEditable, Mode=OneWay}">
+                    <StackPanel Spacing="4">
+                        <controls:SettingCard Header="When the screens turn off">
+                            <ToggleSwitch MinWidth="0" IsOn="{x:Bind VM.PowerRules.FollowDisplayOff, Mode=TwoWay}" />
+                        </controls:SettingCard>
+                        <controls:SettingCard Header="What the TV does"
+                                              IsEnabled="{x:Bind VM.PowerRules.FollowDisplayOff, Mode=OneWay}">
+                            <ComboBox MinWidth="200" SelectedIndex="{x:Bind VM.PowerRules.DisplayOffAction, Mode=TwoWay}">
+                                <ComboBoxItem Content="Screen off" />
+                                <ComboBoxItem Content="Turn off" />
+                            </ComboBox>
+                        </controls:SettingCard>
+                        <controls:SettingCard Header="When the screens turn back on">
+                            <ToggleSwitch MinWidth="0" IsOn="{x:Bind VM.PowerRules.FollowDisplayOn, Mode=TwoWay}" />
+                        </controls:SettingCard>
                     </StackPanel>
-                </Border>
+                </ContentControl>
             </StackPanel>
-
-        </StackPanel>
-    </ScrollViewer>
+        </ScrollViewer>
+    </Grid>
 </Page>

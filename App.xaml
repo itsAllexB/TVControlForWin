@@ -1,13 +1,215 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <Application
-    x:Class="LGforWin.App"
+    x:Class="TVControlForWin.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:TVControlForWin.Controls">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Shared layout. Spacing scale: 4 / 8 / 12 / 16 / 24. Every page uses these, so
+                 padding, corners and type match everywhere. -->
+            <x:Double x:Key="ContentMaxWidth">1000</x:Double>
+            <CornerRadius x:Key="CardCornerRadius">8</CornerRadius>
+
+            <!-- Page title, above the scrolling content. -->
+            <Style x:Key="PageTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
+                <Setter Property="Margin" Value="24,12,24,16" />
+                <Setter Property="MaxWidth" Value="{StaticResource ContentMaxWidth}" />
+            </Style>
+
+            <!-- The page's content column: cards 4 apart, like Windows Settings. -->
+            <Style x:Key="PageContentStyle" TargetType="StackPanel">
+                <Setter Property="Margin" Value="24,0,24,24" />
+                <Setter Property="Spacing" Value="4" />
+                <Setter Property="MaxWidth" Value="{StaticResource ContentMaxWidth}" />
+            </Style>
+
+            <!-- Section header between groups of cards: 24 above, 8 below (with the 4 spacing). -->
+            <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="Margin" Value="1,20,0,4" />
+            </Style>
+
+            <!-- A section header with an InfoTip after it. -->
+            <Style x:Key="SectionHeaderPanelStyle" TargetType="StackPanel">
+                <Setter Property="Orientation" Value="Horizontal" />
+                <Setter Property="Spacing" Value="4" />
+                <Setter Property="Margin" Value="1,20,0,4" />
+            </Style>
+
+            <Style x:Key="SectionHeaderTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <!-- Card container (TV cards, schedule cards). -->
+            <Style x:Key="CardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+                <Setter Property="Padding" Value="16" />
+            </Style>
+
+            <!-- Quiet secondary line under a label. -->
+            <Style x:Key="SecondaryCaptionStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+
+            <Style x:Key="DividerStyle" TargetType="Border">
+                <Setter Property="Height" Value="1" />
+                <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+            </Style>
+
+            <!-- Icon-only button without chrome until hovered (Remove, Power on cards). -->
+            <Style x:Key="SubtleIconButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorTransparentBrush}" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Width" Value="36" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="FocusVisualMargin" Value="-3" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter x:Name="ContentPresenter"
+                                              Background="{TemplateBinding Background}"
+                                              BackgroundSizing="InnerBorderEdge"
+                                              CornerRadius="{TemplateBinding CornerRadius}"
+                                              Padding="{TemplateBinding Padding}"
+                                              Foreground="{TemplateBinding Foreground}"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              AutomationProperties.AccessibilityView="Raw">
+                                <ContentPresenter.BackgroundTransition>
+                                    <BrushTransition Duration="0:0:0.083" />
+                                </ContentPresenter.BackgroundTransition>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="ContentPresenter.Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="ContentPresenter.Background" Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                                                <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TextFillColorDisabledBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </ContentPresenter>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- The InfoTip's round "i" button: small, secondary colour, subtle hover. -->
+            <Style x:Key="InfoTipButtonStyle" TargetType="Button" BasedOn="{StaticResource SubtleIconButtonStyle}">
+                <Setter Property="Width" Value="24" />
+                <Setter Property="Height" Value="24" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="FocusVisualMargin" Value="-2" />
+            </Style>
+
+            <!-- Setting row: icon, label (+ InfoTip), optional one-line description, control on the
+                 right. The default look is its own card, 4 apart in a stack. -->
+            <Style x:Key="SettingCardStyle" TargetType="controls:SettingCard">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+                <Setter Property="Padding" Value="16,12" />
+                <Setter Property="MinHeight" Value="64" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Right" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="controls:SettingCard">
+                            <Grid Background="{TemplateBinding Background}"
+                                  BorderBrush="{TemplateBinding BorderBrush}"
+                                  BorderThickness="{TemplateBinding BorderThickness}"
+                                  CornerRadius="{TemplateBinding CornerRadius}"
+                                  Padding="{TemplateBinding Padding}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="HeaderPart.Foreground" Value="{ThemeResource TextFillColorDisabledBrush}" />
+                                                <Setter Target="DescriptionPart.Foreground" Value="{ThemeResource TextFillColorDisabledBrush}" />
+                                                <Setter Target="IconPart.Foreground" Value="{ThemeResource TextFillColorDisabledBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+
+                                <FontIcon x:Name="IconPart" Grid.Column="0" Glyph="{TemplateBinding Glyph}"
+                                          FontSize="{TemplateBinding GlyphSize}" Width="20" Margin="0,0,16,0" VerticalAlignment="Center"
+                                          Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0" Spacing="1">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock x:Name="HeaderPart" Text="{TemplateBinding Header}"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                                        <controls:InfoTip x:Name="InfoPart"
+                                                          Text="{TemplateBinding InfoText}"
+                                                          Title="{TemplateBinding InfoTitle}" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="DescriptionPart" Text="{TemplateBinding Description}"
+                                               Style="{StaticResource SecondaryCaptionStyle}" />
+                                </StackPanel>
+
+                                <ContentPresenter Grid.Column="2"
+                                                  Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style TargetType="controls:SettingCard" BasedOn="{StaticResource SettingCardStyle}" />
+
+            <!-- The same row without card chrome, for rows inside a TV card. -->
+            <Style x:Key="SettingRowStyle" TargetType="controls:SettingCard" BasedOn="{StaticResource SettingCardStyle}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="0" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="GlyphSize" Value="16" />
+            </Style>
+
         </ResourceDictionary>
     </Application.Resources>
 </Application>

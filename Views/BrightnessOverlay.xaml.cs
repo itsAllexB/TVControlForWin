@@ -1,14 +1,15 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
-using LGforWin.Services;
+using TVControlForWin.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 
-namespace LGforWin.Views;
+namespace TVControlForWin.Views;
 
 /// <summary>
 /// A small borderless, always-on-top OSD (like the Windows volume/brightness flyout) that
@@ -42,9 +43,9 @@ public sealed partial class BrightnessOverlay : Window
     private bool _rendering; // subscribed to CompositionTarget.Rendering
     private Action? _tweenComplete;
 
-    // Current geometry, kept so the hide timer can compute the exit slide.
-    private int _finalX, _finalY, _slidePx;
-    private bool _anchoredTop;
+    // Current geometry: the resting spot, and where the slide starts and ends (see OffstageY).
+    private int _finalX, _finalY, _offstageY;
+    private SizeInt32 _size;
 
     private bool _visible;   // window is shown (may be fading out)
     private bool _hiding;    // a fade-out tween is in progress
@@ -77,6 +78,10 @@ public sealed partial class BrightnessOverlay : Window
         // focus rectangle is drawn and it never steals focus from the active app.
         var ex = GetWindowLongPtr(_hwnd, GWL_EXSTYLE).ToInt64();
         SetWindowLongPtr(_hwnd, GWL_EXSTYLE, new IntPtr(ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW));
+
+        // The slide + fade here is the only animation wanted: no Windows open/close effect on top.
+        var noTransitions = 1;
+        DwmSetWindowAttribute(_hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, ref noTransitions, sizeof(int));
 
         _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.6) };
         _hideTimer.Tick += (_, _) => { _hideTimer.Stop(); BeginHide(); };
@@ -132,63 +137,105 @@ public sealed partial class BrightnessOverlay : Window
     public void ShowUnpaired(OsdSettings osd)
     {
         MsgTitle.Text = "No TV on this screen";
-        MsgSubtitle.Text = "Pair your TVs to their screens on the Home page to control them here.";
+        MsgSubtitle.Text = "Choose each TV's screen on the Home page";
         BrightnessContent.Visibility = Visibility.Collapsed;
         MessageContent.Visibility = Visibility.Visible;
         ShowAt(CursorWorkArea(), osd.Position, MsgWidthDip, MsgHeightDip, osd.TimeoutSeconds);
     }
 
-    // Common show path: place on the work area, size to content (per-monitor DPI), anchor, then
-    // slide + fade in (or snap if already up).
+    // Common show path: work out where the window rests on the target screen, then slide + fade
+    // in. The window is only ever moved to a spot it should be seen at. A window that's up is
+    // drawn wherever it is at that instant, so parking it anywhere else "just for a moment"
+    // (as an earlier version did, at the screen's corner, to read the screen's DPI) shows up as
+    // a one-frame flash there and a one-frame gap here.
     private void ShowAt(RectInt32 work, int position, double widthDip, double heightDip, double timeoutSeconds)
     {
-        // Adopt the target monitor's DPI by moving the window onto it before measuring (DPI is
-        // per-monitor; reading it after the move gives the right scale).
-        AppWindow.Move(new PointInt32(work.X, work.Y));
+        var bounds = new RECT { left = work.X, top = work.Y, right = work.X + work.Width, bottom = work.Y + work.Height };
+        var monitor = MonitorFromRect(ref bounds, MONITOR_DEFAULTTONEAREST);
 
-        var scale = GetDpiForWindow(_hwnd) / 96.0;
-        if (scale <= 0) scale = 1.0;
-
+        var scale = GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, out var dpi, out _) == 0 && dpi > 0 ? dpi / 96.0 : 1.0;
         var size = new SizeInt32((int)(widthDip * scale), (int)(heightDip * scale));
-        AppWindow.Resize(size);
+        var (x, y, top) = Anchor(position, work, size, scale);
+        var offstageY = OffstageY(monitor, x, y, size, top, (int)(SlideDip * scale));
 
-        (_finalX, _finalY, _anchoredTop) = Anchor(position, work, size, scale);
-        _slidePx = (int)(SlideDip * scale);
+        var elsewhere = x != _finalX || y != _finalY || size.Width != _size.Width || size.Height != _size.Height;
+        (_finalX, _finalY, _offstageY, _size) = (x, y, offstageY, size);
 
         _hideTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(timeoutSeconds, 0.5, 5.0));
 
+        if (_visible && elsewhere)
+        {
+            // Up, but it belongs on another screen or at another size now: take it down and let it
+            // enter again over there, rather than resizing and jumping a window that's on show.
+            StopTween();
+            AppWindow.Hide();
+            _visible = false;
+            _hiding = false;
+        }
+
         if (!_visible)
         {
-            // Pre-place just off the resting spot (below for bottom anchors, above for top) and fade up.
+            // Placed just off the resting spot while still hidden, then slid and faded into it.
             Root.Opacity = 0;
-            AppWindow.Move(new PointInt32(_finalX, _anchoredTop ? _finalY - _slidePx : _finalY + _slidePx));
+            Place(x, offstageY, size);
             AppWindow.Show(activateWindow: false); // surface without stealing focus
             _visible = true;
-            _hiding = false;
-            BeginTween(_finalX, _finalY, 1.0, FadeInMs, easeOut: true, onComplete: null);
+            BeginTween(x, y, 1.0, FadeInMs, easeOut: true, onComplete: null);
         }
         else if (_hiding)
         {
-            // Interrupted mid fade-out: glide back to fully visible from wherever we are.
+            // Interrupted mid fade-out: glide back to fully visible from wherever it is.
             _hiding = false;
-            BeginTween(_finalX, _finalY, 1.0, FadeInMs, easeOut: true, onComplete: null);
+            BeginTween(x, y, 1.0, FadeInMs, easeOut: true, onComplete: null);
         }
-        else
-        {
-            // Already up: snap to the (possibly new) anchor without re-running the entrance.
-            StopTween();
-            AppWindow.Move(new PointInt32(_finalX, _finalY));
-            Root.Opacity = 1;
-        }
+        // Otherwise it's up and in place, or still sliding in: only the content changed, so the
+        // window is left alone.
 
         _hideTimer.Stop();
         _hideTimer.Start();
     }
 
+    // Moves and sizes the window in one step.
+    private void Place(int x, int y, SizeInt32 size)
+    {
+        var rect = new RectInt32(x, y, size.Width, size.Height);
+        AppWindow.MoveAndResize(rect);
+
+        // Landing on a screen with a different scale makes Windows rescale the window on the way
+        // there, so ask once more for the size worked out for that screen.
+        if (AppWindow.Size.Width != size.Width || AppWindow.Size.Height != size.Height ||
+            AppWindow.Position.X != x || AppWindow.Position.Y != y)
+            AppWindow.MoveAndResize(rect);
+    }
+
+    /// <summary>
+    /// Where the window slides in from and out to: <paramref name="slide"/> px past its resting
+    /// spot, towards the screen edge it's anchored to. Past that edge there may be another screen
+    /// (screens stacked one above the other), and the window would show on it for the length of
+    /// the animation. In that case the slide stops at this screen's edge.
+    /// </summary>
+    private static int OffstageY(IntPtr monitor, int x, int y, SizeInt32 size, bool top, int slide)
+    {
+        var target = top ? y - slide : y + slide;
+
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(monitor, ref info)) return target;
+        var screen = info.rcMonitor;
+
+        // The strip the slide would cover beyond this screen's edge.
+        var spill = top
+            ? new RECT { left = x, right = x + size.Width, top = target, bottom = screen.top }
+            : new RECT { left = x, right = x + size.Width, top = screen.bottom, bottom = target + size.Height };
+        if (spill.bottom <= spill.top) return target;                                         // stays on this screen
+        if (MonitorFromRect(ref spill, MONITOR_DEFAULTTONULL) == IntPtr.Zero) return target; // no screen there
+
+        return top ? Math.Max(target, screen.top) : Math.Min(target, screen.bottom - size.Height);
+    }
+
     private void BeginHide()
     {
         _hiding = true;
-        var exitY = _anchoredTop ? _finalY - _slidePx : _finalY + _slidePx;
+        var exitY = _offstageY;
         BeginTween(_finalX, exitY, 0.0, FadeOutMs, easeOut: false, onComplete: () =>
         {
             if (!_hiding) return; // a re-show interrupted the hide
@@ -343,9 +390,27 @@ public sealed partial class BrightnessOverlay : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr hWnd);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int left, top, right, bottom; }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+
+    private const uint MONITOR_DEFAULTTONULL = 0;
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
+    private const int MDT_EFFECTIVE_DPI = 0;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromRect(ref RECT lprc, uint dwFlags);
+
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr hMonitor, int dpiType, out uint dpiX, out uint dpiY);
+
+    private const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
     [DllImport("dwmapi.dll")]
