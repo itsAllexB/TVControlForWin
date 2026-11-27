@@ -120,6 +120,9 @@ public sealed partial class UpdateService : IDisposable
             {
                 var name = Text(asset, "name");
                 if (name is null || !InstallerNamePattern().IsMatch(name)) continue;
+                // Only the installer for this release's own version: one left over from another
+                // release would install that version instead, an older one included.
+                if (ParseVersion(name.Split('-')[1]) != version) continue;
 
                 var digest = Text(asset, "digest");
                 var size = asset.TryGetProperty("size", out var s) && s.TryGetInt64(out var n) ? n : 0;
