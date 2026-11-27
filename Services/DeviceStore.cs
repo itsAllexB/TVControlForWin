@@ -58,8 +58,11 @@ public sealed class DeviceStore
     {
         var data = JsonSerializer.Deserialize<BackupData>(json)
                    ?? throw new InvalidDataException("Not a valid TVControlForWin backup file.");
-        data.Devices ??= new List<TvDevice>();
-        data.Settings ??= new AppSettings();
+        // Importing replaces every TV and setting. Any other JSON file reads as an object with
+        // neither section, which would otherwise import as "no TVs, default settings". A real
+        // backup always has both.
+        if (data.Devices is null || data.Settings is null)
+            throw new InvalidDataException("That file isn't a settings backup.");
         return data;
     }
 
@@ -90,8 +93,10 @@ public sealed class DeviceStore
 /// <summary>A single-file backup bundling all TVs and app settings.</summary>
 public sealed class BackupData
 {
-    public List<TvDevice>? Devices { get; set; } = new();
-    public AppSettings? Settings { get; set; } = new();
+    // No initializers: a section missing from the file has to stay null, so that
+    // DeserializeBackup can tell a backup from some other JSON file.
+    public List<TvDevice>? Devices { get; set; }
+    public AppSettings? Settings { get; set; }
 }
 
 /// <summary>App-wide preferences (hotkey step, autostart, theme, schedules).</summary>
