@@ -27,7 +27,8 @@ public sealed class AndroidTvController : ITvController
     private const int PairingStartTimeoutMs = 8000;
     private const int CodeEntryTimeoutMs = 180_000;
 
-    /// <summary>The TV must refuse our certificate this many times running before we believe it.</summary>
+    /// <summary>The TV must refuse our certificate this many times running before we believe it
+    /// (attempts that couldn't reach the TV in between start the count again).</summary>
     private const int RejectionsBeforeUnpairing = 2;
 
     // Windows' names for the TLS alerts a TV sends when it doesn't know our certificate.
@@ -197,6 +198,13 @@ public sealed class AndroidTvController : ITvController
             }
             catch (Exception ex)
             {
+                // Two refusals have to come in a row. A TV that couldn't be reached at all said
+                // nothing about our certificate, so it starts the count again: otherwise one odd
+                // refusal and another days later would erase the pairing. A connection that was
+                // closed some other way neither counts nor resets, in case a refusal sometimes
+                // shows up as a plain close.
+                if (IsUnreachable(ex)) _rejections = 0;
+
                 var wasConnected = Status == TvStatus.Connected;
                 if (wasConnected) Log.Write($"{_device.Host}: connection lost ({ex.Message})");
                 SetStatus(TvStatus.Disconnected, wasConnected || !IsUnreachable(ex)
