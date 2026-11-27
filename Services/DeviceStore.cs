@@ -43,7 +43,7 @@ public sealed class DeviceStore
     {
         try
         {
-            File.WriteAllText(_devicesPath, JsonSerializer.Serialize(devices, JsonOpts));
+            WriteReplacing(_devicesPath, JsonSerializer.Serialize(devices, JsonOpts));
         }
         catch
         {
@@ -98,9 +98,20 @@ public sealed class DeviceStore
     {
         try
         {
-            File.WriteAllText(_settingsPath, JsonSerializer.Serialize(settings, JsonOpts));
+            WriteReplacing(_settingsPath, JsonSerializer.Serialize(settings, JsonOpts));
         }
         catch { }
+    }
+
+    // Written to a file next to the real one, then moved over it in one step. Writing in place
+    // truncates the file first, so a save cut short (the process ended at shutdown or sign-out
+    // mid-write, a full disk) left an empty or half-written devices.json. That loads as "no
+    // TVs", and the next save then wrote the empty list over it for good.
+    private static void WriteReplacing(string path, string contents)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, contents);
+        File.Move(temp, path, overwrite: true);
     }
 }
 
