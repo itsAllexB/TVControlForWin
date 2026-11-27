@@ -132,13 +132,17 @@ public sealed partial class UpdateService : IDisposable
         return new AppUpdate(version, page!, null, null, 0, null);
     }
 
-    /// <summary>"v3.1.0" or "3.1" as a three-part version; null if it isn't one.</summary>
+    /// <summary>"v3.1.0" or "3.1" as a three-part version; null if it isn't one, or is a
+    /// pre-release ("v3.1.0-beta").</summary>
     public static Version? ParseVersion(string? tag)
     {
         if (string.IsNullOrWhiteSpace(tag)) return null;
         var text = tag.Trim().TrimStart('v', 'V');
-        var end = text.IndexOfAny(new[] { '-', '+' }); // drop "-beta", "+build"
-        if (end >= 0) text = text[..end];
+        var build = text.IndexOf('+'); // "+build" metadata doesn't change the version
+        if (build >= 0) text = text[..build];
+        // "3.1.0-beta" comes before 3.1.0. Read as 3.1.0 it would be installed as that, and the
+        // real 3.1.0 would then never be offered, being "the same version".
+        if (text.Contains('-')) return null;
         return Version.TryParse(text, out var version) ? AppInfo.ThreeParts(version) : null;
     }
 
