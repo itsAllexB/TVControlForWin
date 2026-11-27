@@ -37,6 +37,7 @@ internal sealed class AdbBrightness : IDisposable
     private bool _verified; // a write on this connection has been read back
     private int _refusals;  // writes in a row the TV has turned down
     private bool _resumeFailed; // the last quiet reconnect couldn't reach ADB
+    private string? _offeredKey; // made for setup this session, not approved (yet)
     private Timer? _debounce;
     private int _pendingValue;
     private bool _hasPending;
@@ -151,8 +152,15 @@ internal sealed class AdbBrightness : IDisposable
         var token = _lifetime.Token;
         if (State is BrightnessSetup.Connecting or BrightnessSetup.AwaitingApproval or BrightnessSetup.Ready) return;
 
-        // Reuse a saved key (the TV may still trust it); otherwise make one, saved only on success.
-        var key = string.IsNullOrEmpty(_device.AdbKey) ? AdbClient.CreateKey() : _device.AdbKey;
+        // Reuse a saved key (the TV may still trust it); otherwise the one already offered this
+        // session, or a new one. A key is saved only on success, but one the TV was shown is kept
+        // in memory: "Allow" pressed after the wait ran out still approves that key, and the next
+        // attempt then gets in without a second dialog.
+        string key;
+        if (!string.IsNullOrEmpty(_device.AdbKey))
+            key = _device.AdbKey;
+        else
+            lock (_gate) key = _offeredKey ??= AdbClient.CreateKey();
         SetState(BrightnessSetup.Connecting);
         try
         {
