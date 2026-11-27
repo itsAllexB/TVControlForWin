@@ -29,7 +29,9 @@ public sealed class DeviceStore
         {
             if (!File.Exists(_devicesPath)) return new List<TvDevice>();
             var json = File.ReadAllText(_devicesPath);
-            return JsonSerializer.Deserialize<List<TvDevice>>(json) ?? new List<TvDevice>();
+            var devices = JsonSerializer.Deserialize<List<TvDevice>>(json) ?? new List<TvDevice>();
+            devices.RemoveAll(d => d is null); // "[null]" deserializes to a list holding null
+            return devices;
         }
         catch
         {
@@ -72,12 +74,24 @@ public sealed class DeviceStore
         {
             if (!File.Exists(_settingsPath)) return new AppSettings();
             var json = File.ReadAllText(_settingsPath);
-            return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            return FillGaps(JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings());
         }
         catch
         {
             return new AppSettings();
         }
+    }
+
+    // An explicit null in the file ("Osd": null, written by hand or by another tool) replaces
+    // the initializer's value, and the rest of the app reads these sections without checking:
+    // a null schedule list crashed the app on every start, and a null entry in it crashed the
+    // schedule timer. Loading is the one place that has to cope with whatever is on disk.
+    private static AppSettings FillGaps(AppSettings settings)
+    {
+        settings.Osd ??= new OsdSettings();
+        settings.Power ??= new PowerSettings();
+        settings.Schedules = settings.Schedules?.Where(s => s is not null).ToList() ?? new List<BrightnessSchedule>();
+        return settings;
     }
 
     public void SaveSettings(AppSettings settings)
