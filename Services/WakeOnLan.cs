@@ -47,12 +47,8 @@ public static class WakeOnLan
     /// </summary>
     public static async Task SendAsync(string mac, CancellationToken ct = default)
     {
-        if (!TryParseMac(mac, out var bytes)) return;
-
-        // 6× 0xFF followed by the MAC repeated 16 times.
-        var packet = new byte[6 + 16 * 6];
-        for (var i = 0; i < 6; i++) packet[i] = 0xFF;
-        for (var i = 0; i < 16; i++) Buffer.BlockCopy(bytes, 0, packet, 6 + i * 6, 6);
+        var packets = MagicPackets(mac);
+        if (packets.Count == 0) return;
 
         foreach (var bindAddress in BroadcastSources())
         {
@@ -63,13 +59,35 @@ public static class WakeOnLan
                     : new UdpClient(new IPEndPoint(bindAddress, 0));
                 client.EnableBroadcast = true;
                 var target = new IPEndPoint(IPAddress.Broadcast, 9);
-                for (var i = 0; i < 3; i++)
-                    await client.SendAsync(packet, target, ct).ConfigureAwait(false);
+                foreach (var packet in packets)
+                    for (var i = 0; i < 3; i++)
+                        await client.SendAsync(packet, target, ct).ConfigureAwait(false);
             }
             catch { /* one interface failing shouldn't stop the others */ }
         }
 
         Log.Write($"WoL sent to {mac}");
+    }
+
+    /// <summary>
+    /// One magic packet (6× 0xFF, then the MAC 16 times) per address in <paramref name="mac"/>.
+    /// The Mac version of this app stores every address a TV has (Wi-Fi and wired) as a
+    /// comma-separated list in the same field, and a backup or devices.json can come from there;
+    /// each address gets its packet, and the TV answers on whichever it's connected by.
+    /// Addresses that can't be read are skipped.
+    /// </summary>
+    internal static List<byte[]> MagicPackets(string mac)
+    {
+        var packets = new List<byte[]>();
+        foreach (var single in mac.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TryParseMac(single, out var bytes)) continue;
+            var packet = new byte[6 + 16 * 6];
+            for (var i = 0; i < 6; i++) packet[i] = 0xFF;
+            for (var i = 0; i < 16; i++) Buffer.BlockCopy(bytes, 0, packet, 6 + i * 6, 6);
+            packets.Add(packet);
+        }
+        return packets;
     }
 
     private static bool TryParseMac(string mac, out byte[] bytes)
