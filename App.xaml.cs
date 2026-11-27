@@ -30,7 +30,9 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         _dispatcher = DispatcherQueue.GetForCurrentThread();
-        _vm = new MainViewModel(_dispatcher);
+        var launchArgs = Environment.GetCommandLineArgs();
+        var afterUpdate = launchArgs.Contains(AppInfo.UpdatedArg);
+        _vm = new MainViewModel(_dispatcher, afterUpdate);
 
         AutostartService.Apply(_vm.Settings.StartWithWindows);
 
@@ -66,13 +68,12 @@ public partial class App : Application
         // Manual launches always open the window; the launch-behavior preference applies only to the
         // at-sign-in autostart launch (tagged with --autostart on the Run entry). Coming back
         // from a background update, the app returns to the tray it was in.
-        var launchArgs = Environment.GetCommandLineArgs();
         var behavior = launchArgs.Contains(AppInfo.TrayArg) ? 2
             : launchArgs.Contains(AutostartService.AutostartArg) ? _vm.Settings.LaunchBehavior
             : 0;
         ApplyLaunchBehavior(_window, behavior);
 
-        WirePowerAutomation(afterUpdate: launchArgs.Contains(AppInfo.UpdatedArg));
+        WirePowerAutomation(afterUpdate);
 
         _vm.Updates.IsWindowVisible = () => _window?.AppWindow.IsVisible == true;
         _vm.Updates.InstallRequested += InstallUpdate;

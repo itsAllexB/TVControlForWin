@@ -15,6 +15,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly DeviceStore _store;
     private readonly DispatcherQueue _dispatcher;
+    private readonly bool _afterUpdate;
 
     public ObservableCollection<TvViewModel> Tvs { get; } = new();
     public ObservableCollection<ScheduleViewModel> Schedules { get; } = new();
@@ -39,9 +40,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Raised when the hotkey modifier combo changes; App re-registers the global hotkeys.</summary>
     public event Action<uint>? HotkeyModifiersChanged;
 
-    public MainViewModel(DispatcherQueue dispatcher)
+    /// <param name="afterUpdate">The app was restarted by an update rather than started (see
+    /// <see cref="StartupBrightnessFor"/>).</param>
+    public MainViewModel(DispatcherQueue dispatcher, bool afterUpdate = false)
     {
         _dispatcher = dispatcher;
+        _afterUpdate = afterUpdate;
         _store = new DeviceStore();
         Settings = _store.LoadSettings();
         Updates = new UpdateViewModel(Settings, SaveSettings, dispatcher);
@@ -536,8 +540,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // Schedule catch-up on a TV's first connect: the schedule in effect for that TV now, or null
     // when catch-up is off, the TV can't be dimmed, or no schedule targets it. Called off the UI
     // thread, so it reads the settings' schedule list (replaced whole on every edit).
+    // Not after an update: the app was only away for a few seconds, and a brightness someone
+    // chose since the last schedule ran should stay (as "turn on when the app starts" doesn't
+    // run then either).
     private int? StartupBrightnessFor(TvViewModel tv) =>
-        Settings.ApplyScheduleOnStartup && tv.SupportsBrightness
+        Settings.ApplyScheduleOnStartup && !_afterUpdate && tv.SupportsBrightness
             ? RuleTargets.ScheduledBrightnessFor(Settings.Schedules.ToList(), tv.Id, DateTime.Now)
             : null;
 
