@@ -35,6 +35,7 @@ public sealed class DeviceStore
         }
         catch
         {
+            KeepUnreadable(_devicesPath);
             return new List<TvDevice>();
         }
     }
@@ -78,6 +79,7 @@ public sealed class DeviceStore
         }
         catch
         {
+            KeepUnreadable(_settingsPath);
             return new AppSettings();
         }
     }
@@ -112,6 +114,17 @@ public sealed class DeviceStore
         var temp = path + ".tmp";
         File.WriteAllText(temp, contents);
         File.Move(temp, path, overwrite: true);
+    }
+
+    // A file that can't be read is about to be replaced by the next save. Keep a copy, so the
+    // TVs and their pairing keys in it can still be recovered by hand.
+    private static void KeepUnreadable(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Copy(path, path + ".unreadable", overwrite: true);
+        }
+        catch { /* best effort */ }
     }
 }
 
