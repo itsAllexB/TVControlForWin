@@ -45,6 +45,9 @@ public sealed partial class UpdateService : IDisposable
     private const long MaxInstallerBytes = 400L * 1024 * 1024;
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(20);
 
+    // How long a download may go without receiving anything before it's given up.
+    private static readonly TimeSpan DownloadStallTimeout = TimeSpan.FromSeconds(60);
+
     private readonly HttpClient _http;
     private readonly Uri _feed;
     private readonly string _downloadDir;
@@ -197,16 +200,23 @@ public sealed partial class UpdateService : IDisposable
         var part = target + ".part";
         try
         {
-            using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            // The client has no timeout of its own, and a connection that silently stops (Wi-Fi
+            // changed, a sleeping router dropped it) would otherwise leave this read waiting for
+            // ever, the updater "Downloading" and its button disabled until the app restarts.
+            // The limit is on silence, not on the whole download, which may be slow.
+            using var stall = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            stall.CancelAfter(DownloadStallTimeout);
+            using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, stall.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            await using var source = await response.Content.ReadAsStreamAsync(stall.Token).ConfigureAwait(false);
             await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
             {
                 var buffer = new byte[81920];
                 long total = 0;
                 int read;
-                while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                while ((read = await source.ReadAsync(buffer, stall.Token).ConfigureAwait(false)) > 0)
                 {
+                    stall.CancelAfter(DownloadStallTimeout); // something arrived: the clock starts again
                     total += read;
                     if (total > update.InstallerSize)
                         throw new InvalidDataException("The download is bigger than the release says.");
