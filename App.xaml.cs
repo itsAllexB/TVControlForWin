@@ -54,6 +54,8 @@ public partial class App : Application
                 }
             });
         };
+        // Before Start, so a shortcut another app already holds at launch is reported too.
+        _hotkeys.RegistrationChanged += _vm.SetHotkeyRegistration;
         _hotkeys.Start((uint)_vm.Settings.HotkeyModifiers);
         _vm.HotkeyModifiersChanged += mods => _hotkeys?.UpdateModifiers(mods);
 

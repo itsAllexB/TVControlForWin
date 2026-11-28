@@ -23,12 +23,28 @@ public sealed class HotkeyService : IDisposable
     private const int IdUp = 1;
     private const int IdDown = 2;
 
+    private const int ERROR_HOTKEY_ALREADY_REGISTERED = 1409;
+
     private Thread? _thread;
     private uint _threadId;
     private volatile uint _modifiers; // MOD_* bitmask (no MOD_NOREPEAT); 0 = don't register (no bare arrows)
+    private volatile bool _upFailed, _downFailed;
     private readonly ManualResetEventSlim _ready = new(false);
 
     public event Action<HotkeyAction>? HotkeyPressed;
+
+    /// <summary>True when Windows refused the Up shortcut at the last registration (another app holds it).</summary>
+    public bool UpFailed => _upFailed;
+
+    /// <summary>True when Windows refused the Down shortcut at the last registration.</summary>
+    public bool DownFailed => _downFailed;
+
+    /// <summary>
+    /// Raised after every (re)registration with whether the Up and the Down shortcut were refused.
+    /// Like <see cref="HotkeyPressed"/> it is raised on the hotkey thread. Subscribe before
+    /// <see cref="Start"/> to hear the first result.
+    /// </summary>
+    public event Action<bool, bool>? RegistrationChanged;
 
     /// <summary>Starts the hotkey thread, registering the arrow keys with the given modifier bitmask.</summary>
     public void Start(uint modifiers)
@@ -73,14 +89,45 @@ public sealed class HotkeyService : IDisposable
 
     // (Re)registers the two hotkeys with the current modifiers. Never registers bare arrow keys
     // (modifiers == 0) — that would swallow every arrow press system-wide.
+    // Each key is registered on its own: one being taken by another app doesn't cost the other.
     private void Register()
     {
         UnregisterHotKey(IntPtr.Zero, IdUp);
         UnregisterHotKey(IntPtr.Zero, IdDown);
-        if (_modifiers == 0) return;
-        var mod = _modifiers | MOD_NOREPEAT;
-        RegisterHotKey(IntPtr.Zero, IdUp, mod, VK_UP);
-        RegisterHotKey(IntPtr.Zero, IdDown, mod, VK_DOWN);
+        var modifiers = _modifiers;
+        var upFailed = false;
+        var downFailed = false;
+        if (modifiers != 0)
+        {
+            upFailed = !TryRegister(IdUp, modifiers, VK_UP, "Up");
+            downFailed = !TryRegister(IdDown, modifiers, VK_DOWN, "Down");
+        }
+        // Nothing asked for (no modifiers) counts as nothing refused.
+        _upFailed = upFailed;
+        _downFailed = downFailed;
+        RegistrationChanged?.Invoke(upFailed, downFailed);
+    }
+
+    // A refused hotkey is otherwise silent: the shortcut just does nothing. Say so in the log.
+    private static bool TryRegister(int id, uint modifiers, int vk, string key)
+    {
+        if (RegisterHotKey(IntPtr.Zero, id, modifiers | MOD_NOREPEAT, vk)) return true;
+        var error = Marshal.GetLastWin32Error();
+        var why = error == ERROR_HOTKEY_ALREADY_REGISTERED ? ", in use by another app" : "";
+        Log.Write($"hotkeys: couldn't register {ComboName(modifiers, key)} (error {error}{why})");
+        return false;
+    }
+
+    // The combination for the log, modifiers in the order the Hotkeys page lists them, e.g. "Ctrl + Alt + Up".
+    private static string ComboName(uint modifiers, string key)
+    {
+        var parts = new List<string>();
+        if ((modifiers & 0x2) != 0) parts.Add("Ctrl");  // MOD_CONTROL
+        if ((modifiers & 0x8) != 0) parts.Add("Win");   // MOD_WIN
+        if ((modifiers & 0x1) != 0) parts.Add("Alt");   // MOD_ALT
+        if ((modifiers & 0x4) != 0) parts.Add("Shift"); // MOD_SHIFT
+        parts.Add(key);
+        return string.Join(" + ", parts);
     }
 
     public void Dispose()

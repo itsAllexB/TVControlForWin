@@ -158,6 +158,38 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HotkeyComboText));
     }
 
+    // Which of the two shortcuts Windows refused at the last registration, because another app
+    // already holds that combination. Until then the shortcut does nothing, so the page says so.
+    private bool _hotkeyUpFailed, _hotkeyDownFailed;
+
+    /// <summary>
+    /// Takes the result of a hotkey registration (see <see cref="HotkeyService.RegistrationChanged"/>).
+    /// Safe to call from any thread: registration happens on the hotkey thread.
+    /// </summary>
+    public void SetHotkeyRegistration(bool upFailed, bool downFailed)
+    {
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (upFailed == _hotkeyUpFailed && downFailed == _hotkeyDownFailed) return;
+            _hotkeyUpFailed = upFailed;
+            _hotkeyDownFailed = downFailed;
+            OnPropertyChanged(nameof(HotkeyConflictText));
+            OnPropertyChanged(nameof(HotkeyConflictVisibility));
+        });
+    }
+
+    /// <summary>The line under the shortcut when it couldn't be registered; empty when both work.</summary>
+    public string HotkeyConflictText => (_hotkeyUpFailed, _hotkeyDownFailed) switch
+    {
+        (true, true) => "In use by another app",
+        (true, false) => "↑ in use by another app",
+        (false, true) => "↓ in use by another app",
+        _ => "",
+    };
+
+    public Visibility HotkeyConflictVisibility =>
+        HotkeyConflictText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
     /// <summary>0 = follow system, 1 = light, 2 = dark.</summary>
     public int ThemeIndex
     {
