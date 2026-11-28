@@ -30,6 +30,8 @@ if (-not (Test-Path $msbuild)) { $msbuild = Join-Path $vs "MSBuild\Current\Bin\M
 $proj = Join-Path $PSScriptRoot "TVControlForWin.csproj"
 Write-Host "Building $Configuration with $msbuild" -ForegroundColor Cyan
 & $msbuild $proj -restore -p:Configuration=$Configuration -p:Platform=x64 -m
+# Without this a failed build goes on to pack or launch whatever the last good build left.
+if ($LASTEXITCODE -ne 0) { throw "MSBuild failed with exit code $LASTEXITCODE" }
 
 $outDir = Join-Path $PSScriptRoot "bin\x64\$Configuration\net8.0-windows10.0.19041.0\win-x64"
 $exe = Join-Path $outDir "TVControlForWin.exe"
