@@ -190,6 +190,12 @@ public sealed class AndroidTvController : ITvController
                     _device.ClientCertificate = "";
                     DeviceChanged?.Invoke();
                     lock (_gate) _needsPairingMessage = "Needs pairing again";
+
+                    // Straight on to offering Pair. Waiting out the reconnect backoff first left
+                    // the card on "Connecting", and a click on Pair unanswered, for up to 15 s.
+                    CleanupClient();
+                    delay = 1000;
+                    continue;
                 }
                 else
                 {
