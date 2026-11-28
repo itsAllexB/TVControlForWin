@@ -221,6 +221,11 @@ public sealed class AppSettings
     /// this, that install failed, and it isn't tried again without being asked for.</summary>
     public string? UnattendedInstallTried { get; set; }
 
+    /// <summary>The SHA-256 a release lists for its installer, kept when the installer that was
+    /// downloaded turned out not to match it. That release isn't downloaded again unless asked
+    /// for; a release listing another hash is.</summary>
+    public string? RejectedUpdateDigest { get; set; }
+
     /// <summary>TV power automation (follow PC startup/sleep/shutdown/display sleep), shared by every
     /// TV without rules of its own (<see cref="TvDevice.Power"/>). Never null after load.</summary>
     public PowerSettings Power { get; set; } = new();

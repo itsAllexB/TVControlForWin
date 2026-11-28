@@ -31,6 +31,13 @@ public enum InstallKind
 public sealed record AppUpdate(
     Version Version, string PageUrl, string? InstallerUrl, string? InstallerName, long InstallerSize, string? InstallerSha256);
 
+/// <summary>The installer arrived whole and isn't the file its release describes. Unlike a
+/// download that broke off, fetching it again would end the same way.</summary>
+public sealed class InstallerMismatchException : Exception
+{
+    public InstallerMismatchException(string message) : base(message) { }
+}
+
 /// <summary>
 /// Finds, downloads and starts app updates. Releases are published on GitHub; "the latest
 /// release" there is the newest one that isn't a draft or pre-release.
@@ -175,7 +182,9 @@ public sealed partial class UpdateService : IDisposable
     /// <summary>
     /// Downloads the release's installer and checks it against the size and hash GitHub lists
     /// for it. Returns the path of the verified file. <paramref name="progress"/> gets 0..1.
+    /// A file already here that still matches is returned as it is, without downloading.
     /// </summary>
+    /// <exception cref="InstallerMismatchException">What was downloaded isn't the release's file.</exception>
     public async Task<string> DownloadInstallerAsync(AppUpdate update, IProgress<double>? progress, CancellationToken ct = default)
     {
         if (update.InstallerUrl is null || update.InstallerName is null || update.InstallerSha256 is null)
@@ -219,14 +228,16 @@ public sealed partial class UpdateService : IDisposable
                     stall.CancelAfter(DownloadStallTimeout); // something arrived: the clock starts again
                     total += read;
                     if (total > update.InstallerSize)
-                        throw new InvalidDataException("The download is bigger than the release says.");
+                        throw new InstallerMismatchException("The download is bigger than the release says.");
                     await file.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                     progress?.Report((double)total / update.InstallerSize);
                 }
             }
 
-            if (!await MatchesAsync(part, update, ct).ConfigureAwait(false))
-                throw new InvalidDataException("The download doesn't match the release.");
+            // Not MatchesAsync: a file that can't be read back (locked by a virus scanner, say)
+            // is a failed download, not a release that doesn't match.
+            if (!await HasReleaseContentAsync(part, update, ct).ConfigureAwait(false))
+                throw new InstallerMismatchException("The download doesn't match the release.");
             File.Move(part, target, overwrite: true);
             return target;
         }
@@ -234,6 +245,18 @@ public sealed partial class UpdateService : IDisposable
         {
             try { if (File.Exists(part)) File.Delete(part); } catch { }
         }
+    }
+
+    /// <summary>
+    /// The release's installer, if it's downloaded and is still the file the release describes:
+    /// the size and hash are taken again from what's on disk now. Null when it's gone or has
+    /// changed. For checking a download that has been waiting, right before it's run.
+    /// </summary>
+    public async Task<string?> FindInstallerAsync(AppUpdate update, CancellationToken ct = default)
+    {
+        if (update.InstallerName is null || update.InstallerSha256 is null) return null;
+        var target = Path.Combine(_downloadDir, update.InstallerName);
+        return await MatchesAsync(target, update, ct).ConfigureAwait(false) ? target : null;
     }
 
     /// <summary>Clears out downloads that have served their purpose: installers for this version
@@ -258,16 +281,22 @@ public sealed partial class UpdateService : IDisposable
     {
         try
         {
-            var info = new FileInfo(path);
-            if (!info.Exists || info.Length != update.InstallerSize) return false;
-            await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
-            var hash = await SHA256.HashDataAsync(file, ct).ConfigureAwait(false);
-            return Convert.ToHexString(hash).Equals(update.InstallerSha256, StringComparison.OrdinalIgnoreCase);
+            return File.Exists(path) && await HasReleaseContentAsync(path, update, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return false;
         }
+    }
+
+    // Whether the file has the size and SHA-256 the release lists. Throws when the file can't be
+    // read, which says nothing about the release.
+    private static async Task<bool> HasReleaseContentAsync(string path, AppUpdate update, CancellationToken ct)
+    {
+        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+        if (file.Length != update.InstallerSize) return false;
+        var hash = await SHA256.HashDataAsync(file, ct).ConfigureAwait(false);
+        return Convert.ToHexString(hash).Equals(update.InstallerSha256, StringComparison.OrdinalIgnoreCase);
     }
 
     // ----- Installing -----
