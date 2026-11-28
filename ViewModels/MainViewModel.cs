@@ -690,10 +690,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Returns the full configuration (TVs + settings) as a single JSON string.</summary>
     public string ExportSettings() => _store.SerializeBackup(Tvs.Select(t => t.Device), Settings);
 
-    /// <summary>Replaces all TVs and settings from a backup string and reloads live state.</summary>
-    public void ImportSettings(string json)
+    /// <summary>Parses a backup string without changing anything; throws if it isn't a backup.</summary>
+    // Separate from the import, so a file that isn't a backup is refused before the user is
+    // asked whether to replace everything.
+    public BackupData ReadBackup(string json) => _store.DeserializeBackup(json);
+
+    /// <summary>Replaces all TVs and settings with a parsed backup and reloads live state.</summary>
+    public void ImportSettings(BackupData data)
     {
-        var data = _store.DeserializeBackup(json); // throws on invalid input (before we touch anything)
+        // The files about to be replaced are copied aside first. This throws if that fails,
+        // before anything is touched.
+        _store.KeepBeforeImport();
         _store.SaveDevices(data.Devices!);
         _store.SaveSettings(data.Settings!);
         ReloadFromStore();

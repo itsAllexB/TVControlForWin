@@ -69,6 +69,26 @@ public sealed class DeviceStore
         return data;
     }
 
+    /// <summary>
+    /// Copies devices.json and settings.json to "*.before-import" next to them, replacing an
+    /// older copy. Throws if a file that exists can't be copied.
+    /// </summary>
+    // An import replaces every TV, pairing key and setting, and a pairing key can't be had back
+    // without pairing again at the TV. So this is not best effort like the saves: with no copy
+    // made, the import must not go ahead. A file that isn't there yet has nothing to lose.
+    public void KeepBeforeImport()
+    {
+        try
+        {
+            foreach (var path in new[] { _devicesPath, _settingsPath })
+                if (File.Exists(path)) File.Copy(path, path + ".before-import", overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            throw new IOException("A copy of your current settings couldn't be saved, so nothing was changed.", ex);
+        }
+    }
+
     public AppSettings LoadSettings()
     {
         try
