@@ -124,4 +124,6 @@ end;
 [UninstallDelete]
 ; Settings live in %LOCALAPPDATA%\TVControlForWin and are deliberately left behind, so
 ; reinstalling keeps your TVs and their pairing keys.
-Type: filesandordirs; Name: "{app}"
+; The uninstaller removes the files it installed. The folder itself goes only if that left
+; it empty: someone may have installed into a folder that holds other things.
+Type: dirifempty; Name: "{app}"
