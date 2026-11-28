@@ -23,6 +23,10 @@ public sealed class WebOsController : ITvController
     /// <summary>How often to prove the socket is still alive while connected.</summary>
     private const int HeartbeatMs = 30_000;
 
+    /// <summary>How many times, and how far apart, the power state is re-read after un-blanking the panel.</summary>
+    private const int ScreenOnSettleReads = 4;
+    private const int ScreenOnSettleDelayMs = 400;
+
     private readonly TvDevice _device;
     private WebOsClient? _client;
     private CancellationTokenSource _lifetime = new();
@@ -332,6 +336,28 @@ public sealed class WebOsController : ITvController
         await ScreenCommandAsync(SsapPayloads.TurnOnScreen, SsapPayloads.TurnOnScreenLegacy, ct)
             .ConfigureAwait(false) == TvReply.Ok;
 
+    // Un-blanks the panel, then re-reads the power state so the status follows at once. Nothing
+    // pushes the state to us: without this the card would go on saying "Screen off" until the
+    // next heartbeat. The TV can keep answering "Screen Off" for a moment while the panel comes
+    // up, hence the few reads. Each one is capped, and silence ends the wait (a dead socket is
+    // the heartbeat's business).
+    private async Task UnblankAsync(CancellationToken ct)
+    {
+        var accepted = await ScreenOnAsync(ct).ConfigureAwait(false);
+        for (var read = 0; read < ScreenOnSettleReads && !ct.IsCancellationRequested; read++)
+        {
+            if (read > 0)
+            {
+                try { await Task.Delay(ScreenOnSettleDelayMs, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return; }
+            }
+
+            // A refused screen-on still gets the one read: "already on" is a refusal too.
+            var state = await GetPowerStateAsync(ct).ConfigureAwait(false);
+            if (!accepted || state is null || !IsScreenOffState(state)) return;
+        }
+    }
+
     // Screen on/off moved services across firmware generations; try current then legacy. Each
     // attempt is capped, because a TV that died while the socket still looked open would
     // otherwise never answer at all.
@@ -419,6 +445,10 @@ public sealed class WebOsController : ITvController
         !state.Contains("Suspend", StringComparison.OrdinalIgnoreCase) &&
         !state.Contains("Power Off", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>True when the TV is running with only its panel blanked.</summary>
+    private static bool IsScreenOffState(string state) =>
+        state.Contains("Screen Off", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Powers the TV on, retrying until it answers.
     ///
@@ -454,9 +484,9 @@ public sealed class WebOsController : ITvController
                     Log.Write($"{_device.Host}: no reply to getPowerState — stale socket, reconnecting");
                     DropStaleClient();
                 }
-                else if (state.Contains("Screen Off", StringComparison.OrdinalIgnoreCase))
+                else if (IsScreenOffState(state))
                 {
-                    await ScreenOnAsync(ct).ConfigureAwait(false);
+                    await UnblankAsync(ct).ConfigureAwait(false);
                     return;
                 }
                 else if (IsAwakeState(state))
@@ -484,13 +514,23 @@ public sealed class WebOsController : ITvController
     }
 
     /// <summary>
-    /// Turns the TV off if it's awake, wakes it if it isn't. Decided from the TV's own reported
+    /// Turns the TV off if it's awake, wakes it if it isn't; one that only has its screen off
+    /// gets the picture back. Decided from the TV's own reported
     /// state rather than the socket flag, which keeps saying "connected" for minutes after a TV
     /// disappears — otherwise the button would try to switch off a TV that's already off.
     /// </summary>
     public async Task TogglePowerAsync(CancellationToken ct = default)
     {
         var state = await GetPowerStateAsync(ct).ConfigureAwait(false);
+
+        // A blanked panel looks off to whoever is pressing the button, so the press means "on".
+        // "Screen Off" counts as awake below, which would turn the TV fully off instead.
+        if (state is not null && IsScreenOffState(state))
+        {
+            await UnblankAsync(ct).ConfigureAwait(false);
+            return;
+        }
+
         if (state is not null && IsAwakeState(state))
         {
             await TurnOffAsync(ct).ConfigureAwait(false);
