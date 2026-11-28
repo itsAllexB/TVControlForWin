@@ -37,6 +37,8 @@ internal sealed class AdbBrightness : IDisposable
     private bool _verified; // a write on this connection has been read back
     private int _refusals;  // writes in a row the TV has turned down
     private bool _resumeFailed; // the last quiet reconnect couldn't reach ADB
+    private int _resumeGen;     // goes up with every resume and every Suspend; an attempt holding an older number is void
+    private string? _offeredKey; // made for setup this session, not approved (yet)
     private Timer? _debounce;
     private int _pendingValue;
     private bool _hasPending;
@@ -89,13 +91,25 @@ internal sealed class AdbBrightness : IDisposable
     public async Task ResumeAsync(bool mightSupport)
     {
         var token = _lifetime.Token;
+
+        // This attempt can outlive its purpose: it retries for several seconds, and meanwhile the
+        // TV may go away (Suspend) or connect again (a newer resume). Finishing late it would
+        // report a failure nobody is waiting for and put "Set up" back on a TV that works. So
+        // every step below first checks it is still the latest.
+        var gen = Interlocked.Increment(ref _resumeGen);
+        bool Superseded() => gen != Volatile.Read(ref _resumeGen);
+
         if (string.IsNullOrEmpty(_device.AdbKey))
         {
             if (State is BrightnessSetup.Unknown or BrightnessSetup.Unavailable)
                 SetState(mightSupport ? BrightnessSetup.Offered : BrightnessSetup.Unavailable);
             return;
         }
-        _resumeFailed = false;
+        lock (_gate)
+        {
+            if (Superseded()) return;
+            _resumeFailed = false;
+        }
 
         // A TV that's just woken may take a few seconds to bring ADB back up.
         for (var attempt = 0; attempt < ResumeAttempts && !token.IsCancellationRequested; attempt++)
@@ -105,15 +119,32 @@ internal sealed class AdbBrightness : IDisposable
                 await _adbLock.WaitAsync(token).ConfigureAwait(false);
                 try
                 {
-                    await ConnectAsync(_device.AdbKey, onApprovalNeeded: null, token).ConfigureAwait(false);
-                    await ProbeAsync(token).ConfigureAwait(false);
+                    if (Superseded()) return; // before ConnectAsync closes a connection that isn't ours
+                    try
+                    {
+                        await ConnectAsync(_device.AdbKey, onApprovalNeeded: null, token).ConfigureAwait(false);
+                        if (!Superseded()) await ProbeAsync(token, Superseded).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        // Suspend may have run while we were connecting, before there was anything
+                        // for it to close. Under the lock the open connection can only be this
+                        // attempt's own, so this is the place to make sure it doesn't stay behind.
+                        if (Superseded()) CloseConnection();
+                    }
                 }
                 finally { _adbLock.Release(); }
 
+                if (Superseded()) return;
                 ApplyMissedIfAny();
                 return;
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+            catch (Exception) when (Superseded())
+            {
+                // Not a failure: Suspend closing the connection under us ends up here as well.
+                return;
+            }
             catch (AdbException ex) when (ex.NeedsApproval)
             {
                 // The TV forgot us (debugging authorisations revoked, or a factory reset).
@@ -127,11 +158,18 @@ internal sealed class AdbBrightness : IDisposable
                 CloseConnection();
                 if (attempt == ResumeAttempts - 1)
                 {
+                    // Checked together with the write, so a resume that has started since
+                    // (and cleared the flag) can't have it set again behind its back.
+                    lock (_gate)
+                    {
+                        if (Superseded()) return;
+                        _resumeFailed = true;
+                    }
+
                     // Most likely USB debugging was switched off. Keep the key: turning it
                     // back on and running setup again won't need a new approval. In case ADB
                     // was only slow to come up, the next power-on report tries once more.
                     Log.Write($"{_device.Host}: ADB not reachable ({ex.Message}) — brightness unavailable");
-                    _resumeFailed = true;
                     SetState(BrightnessSetup.Offered);
                     return;
                 }
@@ -139,6 +177,7 @@ internal sealed class AdbBrightness : IDisposable
 
             try { await Task.Delay(ResumeRetryDelayMs, token).ConfigureAwait(false); }
             catch (OperationCanceledException) { return; }
+            if (Superseded()) return;
         }
     }
 
@@ -151,8 +190,17 @@ internal sealed class AdbBrightness : IDisposable
         var token = _lifetime.Token;
         if (State is BrightnessSetup.Connecting or BrightnessSetup.AwaitingApproval or BrightnessSetup.Ready) return;
 
-        // Reuse a saved key (the TV may still trust it); otherwise make one, saved only on success.
-        var key = string.IsNullOrEmpty(_device.AdbKey) ? AdbClient.CreateKey() : _device.AdbKey;
+        // Reuse a saved key (the TV may still trust it); otherwise the one already offered this
+        // session, or a new one. A key is saved only on success, but one the TV was shown is kept
+        // in memory: "Allow" pressed after the wait ran out still approves that key, and the next
+        // attempt then gets in without a second dialog.
+        string key;
+        if (!string.IsNullOrEmpty(_device.AdbKey))
+            key = _device.AdbKey;
+        else
+            lock (_gate) key = _offeredKey ??= AdbClient.CreateKey();
+        // A quiet resume still retrying must not finish after this and overwrite its result.
+        Interlocked.Increment(ref _resumeGen);
         SetState(BrightnessSetup.Connecting);
         try
         {
@@ -195,7 +243,12 @@ internal sealed class AdbBrightness : IDisposable
     }
 
     /// <summary>The TV went away (connection lost or standby): the ADB link is dead weight now.</summary>
-    public void Suspend() => CloseConnection();
+    public void Suspend()
+    {
+        // First, so a resume that sees its connection go from under it already knows why.
+        Interlocked.Increment(ref _resumeGen);
+        CloseConnection();
+    }
 
     /// <summary>The TV reported its power state; coming on is when a held value is delivered.</summary>
     public void TvPowerChanged(bool on)
@@ -355,11 +408,15 @@ internal sealed class AdbBrightness : IDisposable
     }
 
     // Checks this TV has a brightness control we know, and reads its current value.
-    private async Task ProbeAsync(CancellationToken token)
+    // The optional check lets a quiet resume stop short of reporting anything once it is no
+    // longer the latest; the caller then closes the connection.
+    private async Task ProbeAsync(CancellationToken token, Func<bool>? superseded = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         timeout.CancelAfter(CommandTimeoutMs);
-        if (!await AdbTclBacklight.IsAvailableAsync(_adb!, timeout.Token).ConfigureAwait(false))
+        var available = await AdbTclBacklight.IsAvailableAsync(_adb!, timeout.Token).ConfigureAwait(false);
+        if (superseded?.Invoke() == true) return;
+        if (!available)
         {
             CloseConnection();
             SetState(BrightnessSetup.Unsupported);
@@ -369,6 +426,7 @@ internal sealed class AdbBrightness : IDisposable
         // Report what the TV is at before announcing Ready: becoming Ready is what triggers the
         // schedule catch-up, and its value has to be the one that sticks, not this reading.
         var value = await AdbTclBacklight.GetAsync(_adb!, timeout.Token).ConfigureAwait(false);
+        if (superseded?.Invoke() == true) return;
         if (value is int current) Reported?.Invoke(current);
         SetState(BrightnessSetup.Ready);
     }

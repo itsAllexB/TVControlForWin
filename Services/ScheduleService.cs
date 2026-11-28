@@ -16,8 +16,10 @@ namespace TVControlForWin.Services;
 /// </summary>
 public sealed class ScheduleService : IDisposable
 {
-    // Ticks are 20s apart; anything much longer means the process was suspended.
-    private static readonly TimeSpan GapThreshold = TimeSpan.FromSeconds(90);
+    // Ticks are 20s apart. A whole minute can only go by without a tick in it when two ticks
+    // are more than 60s apart (the PC slept, or the timer ran late), so from there on the gap
+    // is checked for schedules that were skipped. A schedule caught both ways is just set twice.
+    private static readonly TimeSpan GapThreshold = TimeSpan.FromSeconds(60);
 
     private readonly MainViewModel _vm;
     private readonly DispatcherQueue _dispatcher;

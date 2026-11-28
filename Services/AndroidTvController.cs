@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 using System.ComponentModel;
 using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using TVControlForWin.Models;
 
 namespace TVControlForWin.Services;
@@ -25,7 +27,8 @@ public sealed class AndroidTvController : ITvController
     private const int PairingStartTimeoutMs = 8000;
     private const int CodeEntryTimeoutMs = 180_000;
 
-    /// <summary>The TV must refuse our certificate this many times running before we believe it.</summary>
+    /// <summary>The TV must refuse our certificate this many times running before we believe it
+    /// (attempts that couldn't reach the TV in between start the count again).</summary>
     private const int RejectionsBeforeUnpairing = 2;
 
     // Windows' names for the TLS alerts a TV sends when it doesn't know our certificate.
@@ -39,6 +42,7 @@ public sealed class AndroidTvController : ITvController
     private AndroidTvRemoteClient? _client;
     private bool _running;
     private int _rejections;
+    private bool _loadFailureLogged;
 
     // Pairing puts a dialog on the TV, so it only ever starts because the user asked.
     private TaskCompletionSource _pairRequested = NewSignal();
@@ -132,8 +136,31 @@ public sealed class AndroidTvController : ITvController
                     continue; // paired → connect right away; not paired → wait for the next request
                 }
 
+                if (TryLoadCertificate() is not { } loaded)
+                {
+                    // Without a certificate the TV can't be reached, so offer pairing again
+                    // rather than reconnect for ever. The saved one is kept, and tried again
+                    // meanwhile in case the failure passes, until a new pairing replaces it.
+                    Task requested;
+                    string? message;
+                    lock (_gate)
+                    {
+                        requested = _pairRequested.Task;
+                        message = _needsPairingMessage;
+                    }
+                    if (requested.IsCompleted)
+                    {
+                        await PairAsync(token).ConfigureAwait(false);
+                        continue;
+                    }
+                    SetStatus(TvStatus.NeedsPairing, message ?? "Needs pairing again");
+                    await Task.WhenAny(requested, Task.Delay(delay, token)).ConfigureAwait(false);
+                    token.ThrowIfCancellationRequested();
+                    delay = Math.Min(delay * 2, 15000);
+                    continue;
+                }
+                using var certificate = loaded;
                 SetStatus(TvStatus.Connecting);
-                using var certificate = AndroidTvTls.LoadClientCertificate(_device.ClientCertificate);
                 var client = new AndroidTvRemoteClient();
                 client.PowerChanged += OnPowerChanged;
                 _client = client;
@@ -163,6 +190,12 @@ public sealed class AndroidTvController : ITvController
                     _device.ClientCertificate = "";
                     DeviceChanged?.Invoke();
                     lock (_gate) _needsPairingMessage = "Needs pairing again";
+
+                    // Straight on to offering Pair. Waiting out the reconnect backoff first left
+                    // the card on "Connecting", and a click on Pair unanswered, for up to 15 s.
+                    CleanupClient();
+                    delay = 1000;
+                    continue;
                 }
                 else
                 {
@@ -171,6 +204,13 @@ public sealed class AndroidTvController : ITvController
             }
             catch (Exception ex)
             {
+                // Two refusals have to come in a row. A TV that couldn't be reached at all said
+                // nothing about our certificate, so it starts the count again: otherwise one odd
+                // refusal and another days later would erase the pairing. A connection that was
+                // closed some other way neither counts nor resets, in case a refusal sometimes
+                // shows up as a plain close.
+                if (IsUnreachable(ex)) _rejections = 0;
+
                 var wasConnected = Status == TvStatus.Connected;
                 if (wasConnected) Log.Write($"{_device.Host}: connection lost ({ex.Message})");
                 SetStatus(TvStatus.Disconnected, wasConnected || !IsUnreachable(ex)
@@ -188,6 +228,23 @@ public sealed class AndroidTvController : ITvController
         }
 
         lock (_gate) _running = false;
+    }
+
+    // The saved certificate, or null when it can't be loaded (damaged by hand, or written by
+    // something this copy can't read).
+    private X509Certificate2? TryLoadCertificate()
+    {
+        try
+        {
+            return AndroidTvTls.LoadClientCertificate(_device.ClientCertificate);
+        }
+        catch (Exception ex) when (ex is FormatException or CryptographicException)
+        {
+            if (!_loadFailureLogged)
+                Log.Write($"{_device.Host}: the saved pairing can't be loaded ({ex.Message}) — pairing again is needed");
+            _loadFailureLogged = true; // it's retried every few seconds; once in the log is enough
+            return null;
+        }
     }
 
     private static bool IsCertificateRejected(Exception ex)

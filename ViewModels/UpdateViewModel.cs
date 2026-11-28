@@ -51,6 +51,10 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
     private string? _installer;
     private string _failure = "";
 
+    // The release in _update is one whose installer didn't match it on an earlier download
+    // (AppSettings.RejectedUpdateDigest), and nobody has asked for another try.
+    private bool _rejected;
+
     public UpdateViewModel(AppSettings settings, Action saveSettings, DispatcherQueue dispatcher)
     {
         _settings = settings;
@@ -128,8 +132,9 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
     };
 
     // A portable copy, or a release without an installer this app can verify, is updated by
-    // hand: the button opens the download page.
-    private bool ByHand => Kind == InstallKind.Portable || _update?.InstallerUrl is null;
+    // hand: the button opens the download page. So is a release whose installer has already
+    // failed its check once, until a check is asked for.
+    private bool ByHand => Kind == InstallKind.Portable || _update?.InstallerUrl is null || _rejected;
 
     public string ButtonText => State switch
     {
@@ -195,7 +200,7 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
                 if (await DownloadAsync()) Install(quiet: false);
                 break;
             case UpdateState.Ready:
-                Install(quiet: false);
+                if (await RecheckAsync()) Install(quiet: false);
                 break;
             default:
                 await CheckAsync(manual: true);
@@ -229,8 +234,16 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
 
             if (latest.Version != _update?.Version) _installer = null;
             _update = latest;
+
+            // An installer that didn't match its release is fetched that once, not again every
+            // day. Until someone presses the button the release is one to download by hand; a
+            // release listing another hash is a different file and starts afresh.
+            _rejected = !manual && latest.InstallerSha256 is { } digest
+                && digest.Equals(_settings.RejectedUpdateDigest, StringComparison.OrdinalIgnoreCase);
+
             OnPropertyChanged(nameof(ButtonText));
             Log.Write($"update: {latest.Version.ToString(3)} is available");
+            if (_rejected) Log.Write("update: its installer didn't match the release before, so it isn't downloaded again");
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {
@@ -256,7 +269,7 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
 
         if (!ByHand && _settings.InstallUpdatesAutomatically && _settings.CheckForUpdates)
         {
-            if (_installer is not null || await DownloadAsync()) InstallIfUnattended();
+            if (_installer is not null || await DownloadAsync()) await InstallIfUnattendedAsync();
         }
     }
 
@@ -275,6 +288,8 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
                 if (percent != Progress && State == UpdateState.Downloading) Progress = percent;
             });
             _installer = await _service.DownloadInstallerAsync(update, progress, _lifetime.Token);
+            _rejected = false;
+            RememberRejected(null); // it matches after all
             State = UpdateState.Ready;
             return true;
         }
@@ -285,6 +300,9 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             Log.Write($"update: download failed ({ex.Message})");
+            // Only for a file that arrived and was wrong. A download that broke off, stalled or
+            // couldn't be saved says nothing about the release, and is tried again as before.
+            if (ex is InstallerMismatchException) RememberRejected(update.InstallerSha256);
             _installer = null;
             _failure = "Download failed. Try again later";
             State = UpdateState.Failed;
@@ -292,21 +310,68 @@ public sealed partial class UpdateViewModel : ObservableObject, IDisposable
         }
     }
 
+    private void RememberRejected(string? digest)
+    {
+        if (_settings.RejectedUpdateDigest == digest) return;
+        _settings.RejectedUpdateDigest = digest;
+        _saveSettings();
+    }
+
+    // The installer was checked when it was downloaded, which for a copy waiting on the Install
+    // button can be days ago. It's about to be run, so it's held to the release once more: the
+    // file as it is on disk now, not as it was then. One that's gone or has changed is fetched
+    // again like any other download, and nothing runs if that fails.
+    private async Task<bool> RecheckAsync()
+    {
+        if (_update is not { } update) return false;
+
+        // Busy from here on, so the button can't start a second install while this one waits.
+        State = UpdateState.Installing;
+        try
+        {
+            if (await _service.FindInstallerAsync(update, _lifetime.Token) is { } installer)
+            {
+                _installer = installer;
+                State = UpdateState.Ready;
+                return true;
+            }
+            Log.Write("update: the downloaded installer is missing or has changed");
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"update: couldn't check the downloaded installer ({ex.Message})");
+        }
+
+        _installer = null;
+        return await DownloadAsync();
+    }
+
     /// <summary>The window was closed to the tray: a downloaded update can go in now.</summary>
-    public void NotifyWindowHidden() => InstallIfUnattended();
+    public void NotifyWindowHidden() => _ = InstallIfUnattendedAsync();
 
     // Unattended means: the user asked for automatic installs, this copy's installer needs no
     // permission prompt, and nobody has the window open.
-    private void InstallIfUnattended()
-    {
-        if (State != UpdateState.Ready || Kind != InstallKind.PerUser) return;
-        if (!_settings.InstallUpdatesAutomatically || !_settings.CheckForUpdates) return;
-        if (IsWindowVisible?.Invoke() == true) return;
+    //
+    // One unattended try per version. If the installer fails, the old version comes back
+    // (see UpdateService.InstallCommand) and would otherwise restart itself into the same
+    // failure every day; from then on this version waits for the Install button.
+    private bool CanInstallUnattended =>
+        State == UpdateState.Ready && Kind == InstallKind.PerUser
+        && _settings.InstallUpdatesAutomatically && _settings.CheckForUpdates
+        && IsWindowVisible?.Invoke() != true
+        && _settings.UnattendedInstallTried != NewVersion;
 
-        // One unattended try per version. If the installer fails, the old version comes back
-        // (see UpdateService.InstallCommand) and would otherwise restart itself into the same
-        // failure every day; from then on this version waits for the Install button.
-        if (_settings.UnattendedInstallTried == NewVersion) return;
+    private async Task InstallIfUnattendedAsync()
+    {
+        if (!CanInstallUnattended) return;
+        if (!await RecheckAsync()) return;
+        // That took a moment, or a whole download: the window may have been opened since.
+        if (!CanInstallUnattended) return;
+
         _settings.UnattendedInstallTried = NewVersion;
         _saveSettings();
 

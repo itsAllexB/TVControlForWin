@@ -57,14 +57,19 @@ or `settings`.
 
 ### LG webOS
 
-webOS speaks **SSAP over a WebSocket** at `wss://<tv>:3001`, falling back to `ws://<tv>:3000`.
+webOS speaks **SSAP over a WebSocket**: plain `ws://<tv>:3000` on older firmware, secure
+`wss://<tv>:3001` on 2022 and newer models. A new TV is tried on 3000 first, then 3001.
+Whichever answered is saved with the TV and tried first from then on.
 
 1. **Pair.** A registration handshake makes the TV show an accept prompt and return a
    `client-key`, which is saved and reused so it never prompts again.
-2. **Set brightness.** `ssap://com.webos.settingsservice/setSystemSettings` with
-   `{ "category": "picture", "settings": { "backlight": "<0-100>" } }`, falling back to
-   `ssap://settings/setSystemSettings` on firmware that rejects the internal URI.
-3. **Read brightness.** `ssap://settings/getSystemSettings`.
+2. **Set brightness.** An ordinary SSAP client isn't allowed to write picture settings, so
+   the call goes in through the notification service. The app creates an alert
+   (`ssap://system.notifications/createAlert`) whose close action is
+   `luna://com.webos.settingsservice/setSystemSettings` with
+   `{ "category": "picture", "settings": { "backlight": "<0-100>" } }`, then closes it at
+   once (`…/closeAlert`), which makes the TV run that call itself. There is no fallback route.
+3. **Read brightness.** `ssap://settings/getSystemSettings`, which needs no such detour.
 4. **Power.** `ssap://system/turnOff`, and `…tvpower/power/turnOffScreen` / `turnOnScreen`
    to blank and restore just the panel. `…tvpower/power/getPowerState` reports `Active`,
    `Screen Off` or `Suspend`, and doubles as a liveness probe: a TV that loses power

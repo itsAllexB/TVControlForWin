@@ -15,9 +15,15 @@ public sealed partial class SchedulePage : Page
         VM.RefreshTvLists();
         InitializeComponent();
         // The page isn't observable, so EmptyVisibility binds OneTime and is
-        // re-evaluated here whenever the schedule list grows or shrinks.
-        VM.Schedules.CollectionChanged += (_, _) => Bindings.Update();
+        // re-evaluated here whenever the schedule list grows or shrinks. Only while the page is
+        // shown: the list lives as long as the app, a new page is made on every visit, and a
+        // handler left on the list kept every page ever visited alive and updating.
+        Loaded += (_, _) => VM.Schedules.CollectionChanged += OnSchedulesChanged;
+        Unloaded += (_, _) => VM.Schedules.CollectionChanged -= OnSchedulesChanged;
     }
+
+    private void OnSchedulesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) =>
+        Bindings.Update();
 
     public Visibility EmptyVisibility =>
         VM.Schedules.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

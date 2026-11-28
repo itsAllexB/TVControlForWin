@@ -15,6 +15,7 @@ public sealed partial class HomePage : Page
     private readonly ObservableCollection<DiscoveredTvItem> _discovered = new();
     private CancellationTokenSource? _scanCts;
     private bool _scanning;
+    private bool _confirmingRemove;
 
     public HomePage() => InitializeComponent();
 
@@ -36,10 +37,36 @@ public sealed partial class HomePage : Page
     private void UpdateEmptyState() =>
         EmptyState.Visibility = VM.Tvs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    private void OnRemoveClick(object sender, RoutedEventArgs e)
+    // Removing a TV also drops its pairing, which takes a trip to the TV to get back, so one
+    // click on the bin only asks.
+    private async void OnRemoveClick(object sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: TvViewModel tv })
-            VM.RemoveTvCommand.Execute(tv);
+        if (sender is not Button { Tag: TvViewModel tv }) return;
+
+        // Only one dialog can be open at a time; a double click would otherwise open a second.
+        if (_confirmingRemove) return;
+        _confirmingRemove = true;
+        try
+        {
+            var confirm = new ContentDialog
+            {
+                Title = string.IsNullOrWhiteSpace(tv.Name) ? "Remove this TV?" : $"Remove {tv.Name}?",
+                Content = "Its pairing is removed too.",
+                PrimaryButtonText = "Remove",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot,
+                // A dialog built in code is shown outside the page, so it doesn't pick up a
+                // theme chosen in the app that differs from the Windows one.
+                RequestedTheme = ActualTheme
+            };
+            if (await confirm.ShowAsync() == ContentDialogResult.Primary)
+                VM.RemoveTvCommand.Execute(tv);
+        }
+        finally
+        {
+            _confirmingRemove = false;
+        }
     }
 
     // Power button on each card: turns a connected TV off, wakes a disconnected one via WoL.

@@ -15,6 +15,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly DeviceStore _store;
     private readonly DispatcherQueue _dispatcher;
+    private readonly bool _afterUpdate;
 
     public ObservableCollection<TvViewModel> Tvs { get; } = new();
     public ObservableCollection<ScheduleViewModel> Schedules { get; } = new();
@@ -39,9 +40,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Raised when the hotkey modifier combo changes; App re-registers the global hotkeys.</summary>
     public event Action<uint>? HotkeyModifiersChanged;
 
-    public MainViewModel(DispatcherQueue dispatcher)
+    /// <param name="afterUpdate">The app was restarted by an update rather than started (see
+    /// <see cref="StartupBrightnessFor"/>).</param>
+    public MainViewModel(DispatcherQueue dispatcher, bool afterUpdate = false)
     {
         _dispatcher = dispatcher;
+        _afterUpdate = afterUpdate;
         _store = new DeviceStore();
         Settings = _store.LoadSettings();
         Updates = new UpdateViewModel(Settings, SaveSettings, dispatcher);
@@ -153,6 +157,38 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HotkeyWin));
         OnPropertyChanged(nameof(HotkeyComboText));
     }
+
+    // Which of the two shortcuts Windows refused at the last registration, because another app
+    // already holds that combination. Until then the shortcut does nothing, so the page says so.
+    private bool _hotkeyUpFailed, _hotkeyDownFailed;
+
+    /// <summary>
+    /// Takes the result of a hotkey registration (see <see cref="HotkeyService.RegistrationChanged"/>).
+    /// Safe to call from any thread: registration happens on the hotkey thread.
+    /// </summary>
+    public void SetHotkeyRegistration(bool upFailed, bool downFailed)
+    {
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (upFailed == _hotkeyUpFailed && downFailed == _hotkeyDownFailed) return;
+            _hotkeyUpFailed = upFailed;
+            _hotkeyDownFailed = downFailed;
+            OnPropertyChanged(nameof(HotkeyConflictText));
+            OnPropertyChanged(nameof(HotkeyConflictVisibility));
+        });
+    }
+
+    /// <summary>The line under the shortcut when it couldn't be registered; empty when both work.</summary>
+    public string HotkeyConflictText => (_hotkeyUpFailed, _hotkeyDownFailed) switch
+    {
+        (true, true) => "In use by another app",
+        (true, false) => "↑ in use by another app",
+        (false, true) => "↓ in use by another app",
+        _ => "",
+    };
+
+    public Visibility HotkeyConflictVisibility =>
+        HotkeyConflictText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>0 = follow system, 1 = light, 2 = dark.</summary>
     public int ThemeIndex
@@ -536,8 +572,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // Schedule catch-up on a TV's first connect: the schedule in effect for that TV now, or null
     // when catch-up is off, the TV can't be dimmed, or no schedule targets it. Called off the UI
     // thread, so it reads the settings' schedule list (replaced whole on every edit).
+    // Not after an update: the app was only away for a few seconds, and a brightness someone
+    // chose since the last schedule ran should stay (as "turn on when the app starts" doesn't
+    // run then either).
     private int? StartupBrightnessFor(TvViewModel tv) =>
-        Settings.ApplyScheduleOnStartup && tv.SupportsBrightness
+        Settings.ApplyScheduleOnStartup && !_afterUpdate && tv.SupportsBrightness
             ? RuleTargets.ScheduledBrightnessFor(Settings.Schedules.ToList(), tv.Id, DateTime.Now)
             : null;
 
@@ -683,10 +722,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// <summary>Returns the full configuration (TVs + settings) as a single JSON string.</summary>
     public string ExportSettings() => _store.SerializeBackup(Tvs.Select(t => t.Device), Settings);
 
-    /// <summary>Replaces all TVs and settings from a backup string and reloads live state.</summary>
-    public void ImportSettings(string json)
+    /// <summary>Parses a backup string without changing anything; throws if it isn't a backup.</summary>
+    // Separate from the import, so a file that isn't a backup is refused before the user is
+    // asked whether to replace everything.
+    public BackupData ReadBackup(string json) => _store.DeserializeBackup(json);
+
+    /// <summary>Replaces all TVs and settings with a parsed backup and reloads live state.</summary>
+    public void ImportSettings(BackupData data)
     {
-        var data = _store.DeserializeBackup(json); // throws on invalid input (before we touch anything)
+        // The files about to be replaced are copied aside first. This throws if that fails,
+        // before anything is touched.
+        _store.KeepBeforeImport();
         _store.SaveDevices(data.Devices!);
         _store.SaveSettings(data.Settings!);
         ReloadFromStore();

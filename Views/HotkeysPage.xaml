@@ -16,12 +16,20 @@
                 <!-- The modifier keys; the line under the label shows the whole shortcut. -->
                 <controls:SettingCard Header="Shortcut" Glyph="&#xE765;"
                                       Description="{x:Bind VM.HotkeyComboText, Mode=OneWay}"
-                                      InfoText="Hold these keys and press the Up or Down arrow to change brightness. At least one key stays selected.">
-                    <StackPanel Orientation="Horizontal" Spacing="16">
-                        <CheckBox MinWidth="0" Content="Ctrl" Tag="ctrl" IsChecked="{x:Bind VM.HotkeyCtrl, Mode=OneWay}" Click="OnModifierClick" />
-                        <CheckBox MinWidth="0" Content="Alt" Tag="alt" IsChecked="{x:Bind VM.HotkeyAlt, Mode=OneWay}" Click="OnModifierClick" />
-                        <CheckBox MinWidth="0" Content="Shift" Tag="shift" IsChecked="{x:Bind VM.HotkeyShift, Mode=OneWay}" Click="OnModifierClick" />
-                        <CheckBox MinWidth="0" Content="Win" Tag="win" IsChecked="{x:Bind VM.HotkeyWin, Mode=OneWay}" Click="OnModifierClick" />
+                                      InfoText="Hold these keys and press the Up or Down arrow to change brightness. At least one key stays selected. A shortcut that another app already uses can't be taken. Choose other keys.">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <CheckBox MinWidth="0" Content="Ctrl" Tag="ctrl" IsChecked="{x:Bind VM.HotkeyCtrl, Mode=OneWay}" Click="OnModifierClick" />
+                            <CheckBox MinWidth="0" Content="Alt" Tag="alt" IsChecked="{x:Bind VM.HotkeyAlt, Mode=OneWay}" Click="OnModifierClick" />
+                            <CheckBox MinWidth="0" Content="Shift" Tag="shift" IsChecked="{x:Bind VM.HotkeyShift, Mode=OneWay}" Click="OnModifierClick" />
+                            <CheckBox MinWidth="0" Content="Win" Tag="win" IsChecked="{x:Bind VM.HotkeyWin, Mode=OneWay}" Click="OnModifierClick" />
+                        </StackPanel>
+                        <!-- Shown only while Windows refuses the shortcut because another app holds it. -->
+                        <TextBlock HorizontalAlignment="Right"
+                                   Style="{StaticResource SecondaryCaptionStyle}"
+                                   Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                   Text="{x:Bind VM.HotkeyConflictText, Mode=OneWay}"
+                                   Visibility="{x:Bind VM.HotkeyConflictVisibility, Mode=OneWay}" />
                     </StackPanel>
                 </controls:SettingCard>
 

@@ -29,10 +29,13 @@ public sealed class DeviceStore
         {
             if (!File.Exists(_devicesPath)) return new List<TvDevice>();
             var json = File.ReadAllText(_devicesPath);
-            return JsonSerializer.Deserialize<List<TvDevice>>(json) ?? new List<TvDevice>();
+            var devices = JsonSerializer.Deserialize<List<TvDevice>>(json) ?? new List<TvDevice>();
+            devices.RemoveAll(d => d is null); // "[null]" deserializes to a list holding null
+            return devices;
         }
         catch
         {
+            KeepUnreadable(_devicesPath);
             return new List<TvDevice>();
         }
     }
@@ -41,7 +44,7 @@ public sealed class DeviceStore
     {
         try
         {
-            File.WriteAllText(_devicesPath, JsonSerializer.Serialize(devices, JsonOpts));
+            WriteReplacing(_devicesPath, JsonSerializer.Serialize(devices, JsonOpts));
         }
         catch
         {
@@ -58,9 +61,32 @@ public sealed class DeviceStore
     {
         var data = JsonSerializer.Deserialize<BackupData>(json)
                    ?? throw new InvalidDataException("Not a valid TVControlForWin backup file.");
-        data.Devices ??= new List<TvDevice>();
-        data.Settings ??= new AppSettings();
+        // Importing replaces every TV and setting. Any other JSON file reads as an object with
+        // neither section, which would otherwise import as "no TVs, default settings". A real
+        // backup always has both.
+        if (data.Devices is null || data.Settings is null)
+            throw new InvalidDataException("That file isn't a settings backup.");
         return data;
+    }
+
+    /// <summary>
+    /// Copies devices.json and settings.json to "*.before-import" next to them, replacing an
+    /// older copy. Throws if a file that exists can't be copied.
+    /// </summary>
+    // An import replaces every TV, pairing key and setting, and a pairing key can't be had back
+    // without pairing again at the TV. So this is not best effort like the saves: with no copy
+    // made, the import must not go ahead. A file that isn't there yet has nothing to lose.
+    public void KeepBeforeImport()
+    {
+        try
+        {
+            foreach (var path in new[] { _devicesPath, _settingsPath })
+                if (File.Exists(path)) File.Copy(path, path + ".before-import", overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            throw new IOException("A copy of your current settings couldn't be saved, so nothing was changed.", ex);
+        }
     }
 
     public AppSettings LoadSettings()
@@ -69,29 +95,66 @@ public sealed class DeviceStore
         {
             if (!File.Exists(_settingsPath)) return new AppSettings();
             var json = File.ReadAllText(_settingsPath);
-            return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            return FillGaps(JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings());
         }
         catch
         {
+            KeepUnreadable(_settingsPath);
             return new AppSettings();
         }
+    }
+
+    // An explicit null in the file ("Osd": null, written by hand or by another tool) replaces
+    // the initializer's value, and the rest of the app reads these sections without checking:
+    // a null schedule list crashed the app on every start, and a null entry in it crashed the
+    // schedule timer. Loading is the one place that has to cope with whatever is on disk.
+    private static AppSettings FillGaps(AppSettings settings)
+    {
+        settings.Osd ??= new OsdSettings();
+        settings.Power ??= new PowerSettings();
+        settings.Schedules = settings.Schedules?.Where(s => s is not null).ToList() ?? new List<BrightnessSchedule>();
+        return settings;
     }
 
     public void SaveSettings(AppSettings settings)
     {
         try
         {
-            File.WriteAllText(_settingsPath, JsonSerializer.Serialize(settings, JsonOpts));
+            WriteReplacing(_settingsPath, JsonSerializer.Serialize(settings, JsonOpts));
         }
         catch { }
+    }
+
+    // Written to a file next to the real one, then moved over it in one step. Writing in place
+    // truncates the file first, so a save cut short (the process ended at shutdown or sign-out
+    // mid-write, a full disk) left an empty or half-written devices.json. That loads as "no
+    // TVs", and the next save then wrote the empty list over it for good.
+    private static void WriteReplacing(string path, string contents)
+    {
+        var temp = path + ".tmp";
+        File.WriteAllText(temp, contents);
+        File.Move(temp, path, overwrite: true);
+    }
+
+    // A file that can't be read is about to be replaced by the next save. Keep a copy, so the
+    // TVs and their pairing keys in it can still be recovered by hand.
+    private static void KeepUnreadable(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Copy(path, path + ".unreadable", overwrite: true);
+        }
+        catch { /* best effort */ }
     }
 }
 
 /// <summary>A single-file backup bundling all TVs and app settings.</summary>
 public sealed class BackupData
 {
-    public List<TvDevice>? Devices { get; set; } = new();
-    public AppSettings? Settings { get; set; } = new();
+    // No initializers: a section missing from the file has to stay null, so that
+    // DeserializeBackup can tell a backup from some other JSON file.
+    public List<TvDevice>? Devices { get; set; }
+    public AppSettings? Settings { get; set; }
 }
 
 /// <summary>App-wide preferences (hotkey step, autostart, theme, schedules).</summary>
@@ -157,6 +220,11 @@ public sealed class AppSettings
     /// <summary>The version the last unattended install was for. If the app is still older than
     /// this, that install failed, and it isn't tried again without being asked for.</summary>
     public string? UnattendedInstallTried { get; set; }
+
+    /// <summary>The SHA-256 a release lists for its installer, kept when the installer that was
+    /// downloaded turned out not to match it. That release isn't downloaded again unless asked
+    /// for; a release listing another hash is.</summary>
+    public string? RejectedUpdateDigest { get; set; }
 
     /// <summary>TV power automation (follow PC startup/sleep/shutdown/display sleep), shared by every
     /// TV without rules of its own (<see cref="TvDevice.Power"/>). Never null after load.</summary>
